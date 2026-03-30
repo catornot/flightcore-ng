@@ -28,9 +28,8 @@
         formatter = pkgs.nixfmt-tree;
 
         devShell = pkgs.mkShell {
-          buildInputs = with pkgs; [
+          nativeBuildInputs = [
             toolchain
-
           ];
         };
       }

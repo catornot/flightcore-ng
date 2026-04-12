@@ -1,14 +1,10 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use std::{fs, path::PathBuf};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod dev;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub fn local_dir() -> Result<PathBuf, color_eyre::Report> {
+    let dirs = directories::ProjectDirs::from("org", "flightcore", "flightcore-ng");
+    let path = dirs.unwrap().data_local_dir().to_path_buf();
+    fs::create_dir_all(&path)?;
+    Ok(path)
 }

@@ -27,10 +27,30 @@
       {
         formatter = pkgs.nixfmt-tree;
 
-        devShell = pkgs.mkShell {
+        devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
             toolchain
+            pkgs.umu-launcher
+            pkgs.zenity
           ];
+
+          
+           runtimeDependencies = with pkgs; [
+              libgcc
+              stdenv.cc
+              zstd
+              libxkbcommon
+              vulkan-loader
+              libx11
+              libxcursor
+              libxi
+              libxrandr
+              alsa-lib-with-plugins
+              wayland
+              glfw
+              udev
+            ];
+            LD_LIBRARY_PATH = nixpkgs.lib.makeLibraryPath self.devShells.${system}.default.runtimeDependencies;
         };
       }
     );

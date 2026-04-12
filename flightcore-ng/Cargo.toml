@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 json5 = { workspace = true }
-libthermite = { workspace = true }
 reqwest = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
@@ -13,3 +12,12 @@ serde_json = { workspace = true }
 serde_toml = { workspace = true }
 steamlocate = { workspace = true }
 zip = { workspace = true }
+tracing = { workspace = true }
+color-eyre = { workspace = true }
+eyre = { workspace = true }
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+flightcore-ng-core = { workspace = true }
+
+iced = { version = "0.14.0", features = [ "tokio" ] }

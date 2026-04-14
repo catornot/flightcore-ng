@@ -10,7 +10,12 @@ pub async fn fetch_latest(url: Url) -> Result<RepoCommit> {
 }
 
 async fn fetch_latest_from_pr(pr: Url) -> Result<RepoCommit> {
-    let pr_split = pr.path().split('/').take(4).collect::<Vec<&str>>();
+    let pr_split = pr
+        .path()
+        .split('/')
+        .take(5)
+        .filter(|str| !str.is_empty())
+        .collect::<Vec<&str>>();
     let ["R2Northstar", repo, "pull", number] = pr_split
         .as_array()
         .copied()
@@ -39,7 +44,13 @@ async fn fetch_latest_from_pr(pr: Url) -> Result<RepoCommit> {
 }
 
 async fn fetch_latest_from_repo(url: Url) -> Result<RepoCommit> {
-    let repo_split = url.path().split('/').take(4).collect::<Vec<&str>>();
+    let items = url
+        .path()
+        .split('/')
+        .take(4)
+        .filter(|str| !str.is_empty())
+        .collect::<Vec<&str>>();
+    let repo_split = items;
     let ["R2Northstar", repo] = repo_split
         .as_array()
         .copied()

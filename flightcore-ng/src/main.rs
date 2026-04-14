@@ -1,7 +1,4 @@
-use flightcore_ng_core::dev::wine::{
-    wine_install::{install_wine, is_wine_installed, remove_wine},
-    wine_run::run_game,
-};
+use flightcore_ng_core::dev::wine::wine_run::run_game;
 use iced::{
     Element, Task, Theme,
     widget::{button, column, text},
@@ -54,15 +51,6 @@ impl FlightCore {
 }
 
 async fn fun_name() -> Message {
-    if !is_wine_installed() {
-        info!("installing wine prefix");
-
-        // todo add progress bar
-        if let Err(err) = install_wine().await {
-            _ = remove_wine().await;
-            return Message::DisplayError(err.to_string());
-        }
-    }
     info!(
         "launching the game at /home/catornot/.local/share/Steam/steamapps/common/Titanfall2/NorthstarLauncher.exe"
     );
@@ -71,6 +59,7 @@ async fn fun_name() -> Message {
             "/home/catornot/.local/share/Steam/steamapps/common/Titanfall2/NorthstarLauncher.exe",
         ),
         &[],
+        false,
     )
     .await
     {

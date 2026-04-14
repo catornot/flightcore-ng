@@ -12,6 +12,16 @@ use crate::local_dir;
 pub mod wine_install;
 pub mod wine_run;
 
+const WINE_ENV: &[(&str, &str)] = &[
+    ("UMU_ZENITY", "1"),
+    ("LD_LIBRARY_PATH", ""),
+    ("LD_PRELOAD", ""),
+    ("STORE", "ea"),
+    ("WINEDEBUG", "fixme-all"),
+    ("GAMEID", "umu-0"),
+    ("PROTON_VERB", "run"),
+];
+
 pub async fn run_wine_command(
     arg: impl AsRef<OsStr>,
     args: impl Iterator<Item = impl AsRef<OsStr>>,
@@ -23,11 +33,9 @@ pub async fn run_wine_command(
 
     let mut command = Command::new("umu-run");
     command
-        .env("UMU_ZENITY", "1")
+        .envs(WINE_ENV.iter().copied())
         .env("WINEPREFIX", wine_prefix)
         .env("PROTONPATH", proton)
-        .env("LD_LIBRARY_PATH", "")
-        .env("LD_PRELOAD", "")
         .arg(arg)
         .args(args);
 

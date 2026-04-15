@@ -53,6 +53,12 @@ enum Commands {
         #[clap(long, short, value_name = "profile", value_hint = ValueHint::Other)]
         profile: Option<String>,
     },
+
+    #[command(name = "edit")]
+    Edit {
+        #[arg(value_name = "editor path", value_hint = ValueHint::AnyPath)]
+        editor: Option<String>,
+    },
     // #[command(name = "clean-wine")]
     // CleanWine {},
 }
@@ -75,6 +81,7 @@ async fn main() -> Result<()> {
         Commands::InstallMod {}
         | Commands::InstallRepos {}
         | Commands::InstallPullRequest { pr: _, profile: _ }
+        | Commands::Edit { editor: _ }
         | Commands::LaunchWine {
             passthrough: _,
             profile: _,
@@ -144,6 +151,23 @@ async fn main() -> Result<()> {
                 &passthrough,
                 false,
             )
+            .await?;
+        }
+
+        Commands::Edit { editor } => {
+            _ = tokio::process::Command::new(
+                editor
+                    .or_else(|| std::env::var("EDITOR").ok())
+                    .unwrap_or_else(|| {
+                        if cfg!(target_os = "linux") {
+                            "nano".to_string()
+                        } else {
+                            "notepad".to_string()
+                        }
+                    }),
+            )
+            .arg(flightcore_ng_core::settings::SETTINGS_PATH.as_path())
+            .output()
             .await?;
         }
     }

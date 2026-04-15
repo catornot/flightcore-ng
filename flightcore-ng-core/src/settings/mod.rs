@@ -1,5 +1,6 @@
 use color_eyre::eyre::{Report, WrapErr};
 use eyre::eyre;
+use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
@@ -9,11 +10,12 @@ use tokio::fs;
 
 use crate::local_dir;
 
-static SETTINGS_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+pub static SETTINGS_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
     local_dir()
         .expect("local dir should not be failing")
         .join("settings.ron")
 });
+pub static PREATTY_CONFIG: LazyLock<PrettyConfig> = LazyLock::new(PrettyConfig::new);
 
 #[derive(Debug, Clone)]
 pub struct FlightCoreSettings {
@@ -76,15 +78,18 @@ impl FlightCoreSettings {
     }
 
     pub async fn save(&self) -> Result<(), Report> {
-        fs::write(SETTINGS_PATH.as_path(), ron::to_string(&self.settings)?)
-            .await
-            .wrap_err("couldn't save settings")
+        fs::write(
+            SETTINGS_PATH.as_path(),
+            ron::ser::to_string_pretty(&self.settings, PREATTY_CONFIG.clone())?,
+        )
+        .await
+        .wrap_err("couldn't save settings")
     }
 }
 
 impl Drop for FlightCoreSettings {
     fn drop(&mut self) {
-        _ = ron::to_string(&self.settings)
+        _ = ron::ser::to_string_pretty(&self.settings, PREATTY_CONFIG.clone())
             .map(|settings| _ = std::fs::write(SETTINGS_PATH.as_path(), settings));
     }
 }

@@ -70,6 +70,18 @@ pub async fn install_northstar(
             fs::copy(&path, &copy_path)
                 .await
                 .wrap_err_with(|| eyre!("failed to copy file from tmp directory to install directory : {path:?} to {copy_path:?}"))?;
+
+            // when installing from nix store the permissions are all read only
+            #[cfg(target_os = "linux")]
+            if let Ok(file) = fs::File::open(copy_path).await {
+                use std::os::unix::fs::PermissionsExt;
+
+                if let Ok(mut permissions) =
+                    file.metadata().await.map(|metadata| metadata.permissions())
+                {
+                    permissions.set_mode(0o6444);
+                }
+            }
         }
     }
 

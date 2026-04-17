@@ -165,17 +165,17 @@ async fn main() -> Result<()> {
                     let profile = settings
                         .add_profile(profile, Some(titanfall_path))
                         .expect("this invariant should have been upheld");
-                    profile.northstar = NorthstarSource::Overlayed; // set overlay-ed for new profiles
+                    profile.flavor = NorthstarSource::Overlayed; // set overlay-ed for new profiles
                     profile
                 }
             };
 
-            if !matches!(profile.northstar, NorthstarSource::Overlayed) && !force {
+            if !matches!(profile.flavor, NorthstarSource::Overlayed) && !force {
                 error!("this is profile isn't setup for commit based installations!");
                 error!("you can override that by using --force!");
                 return Err(eyre!("{} isn't built for this", profile.name));
             }
-            profile.northstar = NorthstarSource::Overlayed;
+            profile.flavor = NorthstarSource::Overlayed;
 
             // remove all sources related to northstar installs
             profile.sources.retain(|source| match source {

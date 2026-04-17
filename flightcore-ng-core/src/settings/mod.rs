@@ -36,7 +36,7 @@ pub struct Settings {
 pub struct ProfileSettings {
     pub name: String,
     pub titanfall2_path: PathBuf,
-    pub northstar: NorthstarSource,
+    pub flavor: NorthstarSource,
     pub sources: Vec<Source>,
     pub launch_args: Vec<String>,
     pub ignore_global_launch_args: bool,
@@ -173,7 +173,7 @@ impl FlightCoreSettings {
             self.settings.profiles.push(ProfileSettings {
                 name: "R2NorthstarStable".to_string(),
                 titanfall2_path: titanfall2.clone(),
-                northstar: NorthstarSource::Stable,
+                flavor: NorthstarSource::Stable,
                 ..Default::default()
             });
         }
@@ -181,7 +181,7 @@ impl FlightCoreSettings {
             self.settings.profiles.push(ProfileSettings {
                 name: "R2NorthstarNightly".to_string(),
                 titanfall2_path: titanfall2.clone(),
-                northstar: NorthstarSource::Nightly,
+                flavor: NorthstarSource::Nightly,
                 ..Default::default()
             });
         }

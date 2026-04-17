@@ -1,12 +1,12 @@
 use color_eyre::eyre::{Context, Report, eyre};
 use futures_lite::StreamExt;
 use octocrab::models::repos::Asset;
-use pelite::{FileMap, pe32::Pe as _, pe64::Pe as _};
+use pelite::{FileMap, pe64::Pe as _};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, io::Cursor, path::Path};
-use tokio::fs;
+use tokio::{fs, io::AsyncReadExt};
 use tracing::{error, info};
 
 use crate::{
@@ -39,7 +39,7 @@ pub async fn bootstrap_northstar(profile: &ProfileSettings, check: Check) -> Res
 
     let _lock = fs::File::create(tmp_dir()?.join(".lock")).await?;
 
-    match &profile.northstar {
+    match &profile.flavor {
         crate::settings::NorthstarSource::Version(version) => 'version: {
             // yes this is not very efficient but it's either here or in stable
             if check_if_installed(profile, version.to_string().as_str()).await
@@ -71,7 +71,49 @@ pub async fn bootstrap_northstar(profile: &ProfileSettings, check: Check) -> Res
 
             download_northstar_latest(profile).await?;
         }
-        crate::settings::NorthstarSource::Nightly => todo!(),
+        crate::settings::NorthstarSource::Nightly => 'nightly: {
+            'version_check: {
+                // break if the profile doesn't even exist
+                if !profile.titanfall2_path.join(&profile.name).exists() {
+                    break 'version_check;
+                }
+
+                let version_file_path = profile
+                    .titanfall2_path
+                    .join(&profile.name)
+                    .join("nightly-ver");
+                let mut file = match fs::File::open(&version_file_path).await {
+                    Ok(file) => file,
+                    Err(err) => match fs::File::create_new(version_file_path)
+                        .await
+                        .wrap_err(err)
+                        .wrap_err("couldn't open version file for nightly build")
+                    {
+                        Ok(file) => file,
+                        Err(err) => {
+                            error!("{err}");
+                            error!("no updates can be done!");
+                            break 'nightly;
+                        }
+                    },
+                };
+                let mut version = String::new();
+                _ = file.read_to_string(&mut version).await;
+
+                if Some(version)
+                    == fetch_releases::fetch_latest("catornot", "northstar-nightly")
+                        .await?
+                        .into_iter()
+                        .find(|asset| asset.name.contains("northstar-nightly"))
+                        .map(|asset| asset.name)
+                {
+                    info!("bootstrap: nightly version seems to be matching doing nothing");
+                    break 'nightly;
+                }
+            }
+
+            download_latest_nightly(profile).await?;
+        }
         crate::settings::NorthstarSource::Overlayed => {
             if check == Check::Check {
                 info!(
@@ -191,6 +233,20 @@ async fn download_northstar_version(
     Ok(())
 }
 
+async fn download_latest_nightly(profile: &ProfileSettings) -> Result<(), Report> {
+    let northstar_asset = fetch_releases::fetch_latest("catornot", "northstar-nightly")
+        .await?
+        .into_iter()
+        .find(|asset| asset.name.contains("northstar-nightly"))
+        .ok_or_else(|| eyre!("no northstar found for latest release somehow"))?;
+
+    info!("installing nightly : {}", northstar_asset.name);
+
+    install_northstar_release_asset(profile, northstar_asset).await?;
+
+    Ok(())
+}
+
 async fn download_ion_latest(profile: &ProfileSettings) -> Result<(), Report> {
     let ion_asset = fetch_releases::fetch_latest("r2ion", "Ion")
         .await?
@@ -213,7 +269,7 @@ async fn install_northstar_release_asset(
         .await
         .wrap_err("no assets found")?;
     let cursor = Cursor::new(bytes);
-    let tmp_dir = tmp_dir()?.join("northstar-version");
+    let tmp_dir = tmp_dir()?.join("northstar-release");
     _ = fs::remove_dir_all(&tmp_dir).await;
 
     zip::ZipArchive::new(cursor)
@@ -233,6 +289,11 @@ pub async fn install_northstar(
     let r2northstar_dst = titanfall_dir.join(profile);
     let bin_tmp = northstar_dir.join("bin");
     let bin_dst = titanfall_dir.join("bin");
+
+    // create the profile
+    fs::create_dir(&r2northstar_dst)
+        .await
+        .wrap_err_with(|| eyre!("couldn't create the profile at {r2northstar_dst:?}"))?;
 
     // since files can be removed we must delete these mods
     for path in CORE_MODS

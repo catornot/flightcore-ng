@@ -236,6 +236,8 @@ async fn main() -> Result<()> {
         }
 
         Commands::Edit { editor } => {
+            settings.save().await.wrap_err("tried saving settings")?;
+            drop(settings);
             _ = tokio::process::Command::new(
                 editor
                     .or_else(|| std::env::var("EDITOR").ok())

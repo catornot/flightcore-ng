@@ -6,7 +6,10 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, io::Cursor, path::Path};
-use tokio::{fs, io::AsyncReadExt};
+use tokio::{
+    fs,
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 use tracing::{error, info};
 
 use crate::{
@@ -100,16 +103,18 @@ pub async fn bootstrap_northstar(profile: &ProfileSettings, check: Check) -> Res
                 let mut version = String::new();
                 _ = file.read_to_string(&mut version).await;
 
-                if Some(version)
-                    == fetch_releases::fetch_latest("catornot", "northstar-nightly")
-                        .await?
-                        .into_iter()
-                        .find(|asset| asset.name.contains("northstar-nightly"))
-                        .map(|asset| asset.name)
-                {
+                let latest_version = fetch_releases::fetch_latest("catornot", "northstar-nightly")
+                    .await?
+                    .into_iter()
+                    .find(|asset| asset.name.contains("northstar-nightly"))
+                    .map(|asset| asset.name)
+                    .unwrap_or_default();
+                if version == latest_version {
                     info!("bootstrap: nightly version seems to be matching doing nothing");
                     break 'nightly;
                 }
+
+                _ = file.write_all_buf(&mut latest_version.as_bytes()).await;
             }
 
             download_latest_nightly(profile).await?;
@@ -171,6 +176,43 @@ pub async fn bootstrap_northstar(profile: &ProfileSettings, check: Check) -> Res
                             &profile.titanfall2_path,
                         )
                         .await?;
+                    }
+                    (
+                        crate::settings::LauncherSource::Path(launcher),
+                        crate::settings::CoreModsSource::Path(mods),
+                        _,
+                    ) => {
+                        #[cfg(target_os = "linux")]
+                        {
+                            _ = fs::remove_file(
+                                profile
+                                    .titanfall2_path
+                                    .join(&profile.name)
+                                    .join("Northstar.dll"),
+                            )
+                            .await;
+                            _ = fs::symlink(
+                                launcher.join("build").join("game").join("Northstar.dll"),
+                                profile
+                                    .titanfall2_path
+                                    .join(&profile.name)
+                                    .join("Northstar.dll"),
+                            )
+                            .await;
+                            for (top, mod_path) in CORE_MODS
+                                .into_iter()
+                                .map(|path| profile.titanfall2_path.join(&profile.name).join(path))
+                                .filter_map(|path| {
+                                    Some((
+                                        path.components().next()?.as_os_str().to_os_string(),
+                                        path,
+                                    ))
+                                })
+                            {
+                                _ = fs::remove_file(&mod_path).await;
+                                _ = fs::symlink(mods.join(top), mod_path).await;
+                            }
+                        }
                     }
                     _ => todo!("other overlays are not supported yet"),
                 };
@@ -291,9 +333,7 @@ pub async fn install_northstar(
     let bin_dst = titanfall_dir.join("bin");
 
     // create the profile
-    fs::create_dir(&r2northstar_dst)
-        .await
-        .wrap_err_with(|| eyre!("couldn't create the profile at {r2northstar_dst:?}"))?;
+    _ = fs::create_dir(&r2northstar_dst).await;
 
     // since files can be removed we must delete these mods
     for path in CORE_MODS

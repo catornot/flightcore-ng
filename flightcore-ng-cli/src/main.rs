@@ -1,20 +1,20 @@
 use clap::{Parser, Subcommand, ValueHint};
 use color_eyre::eyre::Result;
-use eyre::eyre;
+use eyre::{Context, eyre};
 use flightcore_ng_core::{
-    TITANFALL_ID,
-    dev::{
-        fetch_revs::fetch_latest,
-        install_northstar::{NorthstarInstallInfo, get_northstar_from_revs},
-        wine::wine_run::run_game,
+    TITANFALL_ID, create_backup,
+    dev::fetch_revs::fetch_latest,
+    launch::launch_northstar,
+    settings::{
+        CoreModsSource, DiscordRPCSource, FlightCoreSettings, LauncherSource, NorthstarSource,
+        SETTINGS_PATH, Source,
     },
-    install_northstar,
-    settings::FlightCoreSettings,
+    setup::northstar::bootstrap_northstar,
 };
 use inquire::validator::{ErrorMessage, Validation};
 use std::path::PathBuf;
 use steamlocate::SteamDir;
-use tracing::info;
+use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
 #[clap(name = "cat_or_not")]
@@ -32,13 +32,22 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    #[command(name = "install-pr")]
+    #[command(name = "install-pr", alias = "pr")]
     InstallPullRequest {
         #[arg(value_name = "NorthstarMods or NorthstarLauncher url", value_hint = ValueHint::Url)]
-        pr: reqwest::Url,
+        #[arg(
+            help = "Specify a pr url for any of the repos that are part of the northstar distribution! any amount of prs up to 3 for each repo of course!"
+        )]
+        urls: Vec<reqwest::Url>,
 
         #[clap(long, short, value_name = "profile", value_hint = ValueHint::Other)]
         profile: Option<String>,
+
+        #[clap(long, value_name = "force install pr")]
+        #[arg(
+            help = "force install commit based northstar into this profile; it will permanently modify this profile to be based on commits!"
+        )]
+        force: bool,
     },
 
     InstallMod {},
@@ -59,6 +68,12 @@ enum Commands {
         #[arg(value_name = "editor path", value_hint = ValueHint::AnyPath)]
         editor: Option<String>,
     },
+
+    #[command(name = "open")]
+    Open {
+        #[arg(long, short, value_name = "the profile which should be opened", value_hint = ValueHint::AnyPath)]
+        profile: Option<String>,
+    },
     // #[command(name = "clean-wine")]
     // CleanWine {},
 }
@@ -70,22 +85,44 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut settings = FlightCoreSettings::load().await?;
+    let mut settings = match FlightCoreSettings::load().await {
+        Err(_) => {
+            warn!("made a backup for settings");
+            warn!("settings reset since they couldn't be loaded");
+            create_backup(SETTINGS_PATH.as_path(), true).await?;
+            FlightCoreSettings::load().await?
+        }
+        Ok(settings) => settings,
+    };
 
     let profile = match &args.command {
-        Commands::InstallPullRequest { pr: _, profile }
+        Commands::InstallPullRequest {
+            urls: _,
+            profile,
+            force: _,
+        }
         | Commands::LaunchWine {
             passthrough: _,
             profile,
-        } if profile.is_some() => profile.as_ref().unwrap().as_str(),
+        }
+        | Commands::Open { profile }
+            if profile.is_some() =>
+        {
+            profile.as_ref().unwrap().as_str()
+        }
         Commands::InstallMod {}
         | Commands::InstallRepos {}
-        | Commands::InstallPullRequest { pr: _, profile: _ }
+        | Commands::InstallPullRequest {
+            urls: _,
+            profile: _,
+            force: _,
+        }
         | Commands::Edit { editor: _ }
         | Commands::LaunchWine {
             passthrough: _,
             profile: _,
-        } => "R2Northstar",
+        }
+        | Commands::Open { profile: _ } => "R2Northstar",
     };
 
     let titanfall_path = settings
@@ -95,46 +132,90 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| ask_titanfall_path(&mut settings));
 
     match args.command {
-        Commands::InstallPullRequest { pr, profile } => {
-            let (launcher, mods) = if pr
-                .path()
-                .split('/')
-                .nth(2)
-                .filter(|repo| *repo == "NorthstarLauncher")
-                .is_some()
-            {
-                (
-                    fetch_latest(pr).await?.sha,
-                    fetch_latest("https://github.com/R2Northstar/NorthstarMods".try_into()?)
-                        .await?
-                        .sha,
-                )
-            } else if pr
-                .path()
-                .split('/')
-                .nth(2)
-                .filter(|repo| *repo == "NorthstarMods")
-                .is_some()
-            {
-                (
-                    fetch_latest("https://github.com/R2Northstar/NorthstarLauncher".try_into()?)
-                        .await?
-                        .sha,
-                    fetch_latest(pr).await?.sha,
-                )
-            } else {
-                return Err(eyre!("tried to use a foreign repo"))?;
-            };
+        Commands::InstallPullRequest {
+            urls,
+            profile,
+            force,
+        } => {
+            let repo_iter = urls.iter().filter_map(|url| url.path().split('/').nth(2));
+            let launcher = repo_iter
+                .clone()
+                .position(|repo| repo == "NorthstarLauncher")
+                .and_then(|index| urls.get(index))
+                .cloned();
+            let mods = repo_iter
+                .clone()
+                .position(|repo| repo == "NorthstarMods")
+                .and_then(|index| urls.get(index))
+                .cloned();
+            let discord_rpc = repo_iter
+                .clone()
+                .position(|repo| repo == "NorthstarDiscordRPC")
+                .and_then(|index| urls.get(index))
+                .cloned();
+
+            if launcher.is_none() && mods.is_none() && discord_rpc.is_none() {
+                Err(eyre!("tried to use a foreign repo"))?;
+            }
 
             let profile = profile.as_deref().unwrap_or("R2NorthstarDev");
-            install_northstar(
-                &get_northstar_from_revs(NorthstarInstallInfo::new(mods, launcher)).await?,
-                profile,
-                settings
-                    .get_titanfall_path_from_profile(profile)
-                    .unwrap_or(&titanfall_path),
-            )
-            .await?;
+            let profile = match settings.get_profile_mut(profile) {
+                Some(profile) => profile,
+                None => {
+                    let profile = settings
+                        .add_profile(profile, Some(titanfall_path))
+                        .expect("this invariant should have been upheld");
+                    profile.northstar = NorthstarSource::Overlayed; // set overlay-ed for new profiles
+                    profile
+                }
+            };
+
+            if !matches!(profile.northstar, NorthstarSource::Overlayed) && !force {
+                error!("this is profile isn't setup for commit based installations!");
+                error!("you can override that by using --force!");
+                return Err(eyre!("{} isn't built for this", profile.name));
+            }
+            profile.northstar = NorthstarSource::Overlayed;
+
+            // remove all sources related to northstar installs
+            profile.sources.retain(|source| match source {
+                Source::DiscordRPC(_) | Source::Launcher(_) | Source::CoreMods(_) => false,
+                Source::Mod(_) | Source::ModRepo(_) | Source::Package(_) => true,
+            });
+
+            profile.sources.extend_from_slice(&[
+                Source::Launcher(LauncherSource::FromCommit(
+                    fetch_latest(launcher.unwrap_or_else(|| {
+                        "https://github.com/R2Northstar/NorthstarLauncher"
+                            .try_into()
+                            .unwrap()
+                    }))
+                    .await
+                    .wrap_err("couldn't get latest launcher")?,
+                )),
+                Source::CoreMods(CoreModsSource::FromCommit(
+                    fetch_latest(mods.unwrap_or_else(|| {
+                        "https://github.com/R2Northstar/NorthstarMods"
+                            .try_into()
+                            .unwrap()
+                    }))
+                    .await
+                    .wrap_err("couldn't get latest mods")?,
+                )),
+                Source::DiscordRPC(DiscordRPCSource::FromCommit(
+                    fetch_latest(discord_rpc.unwrap_or_else(|| {
+                        "https://github.com/R2Northstar/NorthstarDiscordRPC"
+                            .try_into()
+                            .unwrap()
+                    }))
+                    .await
+                    .wrap_err("couldn't get latest discord rpc plugin")?,
+                )),
+            ]);
+
+            bootstrap_northstar(profile, flightcore_ng_core::setup::northstar::Check::Force)
+                .await
+                .wrap_err("could not install northstar")?;
         }
         Commands::InstallMod {} => todo!(),
         Commands::InstallRepos {} => todo!(),
@@ -146,10 +227,10 @@ async fn main() -> Result<()> {
                 info!("using profile {profile}");
                 passthrough.push(format!("-profile={profile}"));
             }
-            run_game(
-                &titanfall_path.join("NorthstarLauncher.exe"),
-                &passthrough,
-                false,
+            launch_northstar(
+                &settings,
+                profile.as_deref().unwrap_or("R2NorthstarStable"),
+                passthrough,
             )
             .await?;
         }
@@ -169,6 +250,9 @@ async fn main() -> Result<()> {
             .arg(flightcore_ng_core::settings::SETTINGS_PATH.as_path())
             .output()
             .await?;
+        }
+        Commands::Open { profile: _ } => {
+            open::that_detached(titanfall_path.join(profile))?;
         }
     }
 
@@ -213,6 +297,7 @@ fn ask_titanfall_path(settings: &mut FlightCoreSettings) -> PathBuf {
     };
 
     settings.add_titanfall_path(titanfall.clone());
+    settings.add_default_profiles();
 
     titanfall
 }

@@ -18,6 +18,7 @@ eyre = { workspace = true }
 tokio = { workspace = true }
 rustls = { workspace = true }
 tracing-subscriber = { workspace = true }
+open = { workspace = true }
 
 flightcore-ng-core = { workspace = true }
 

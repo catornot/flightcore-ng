@@ -1,10 +1,12 @@
-use color_eyre::eyre::Report;
-use eyre::{Context, eyre};
+use color_eyre::eyre::{Context, Report, eyre};
+use futures_lite::StreamExt;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
 pub mod dev;
+pub mod launch;
 pub mod settings;
+pub mod setup;
 
 pub const TITANFALL_ID: u32 = 1237970;
 
@@ -20,148 +22,61 @@ pub fn tmp_dir() -> Result<PathBuf, color_eyre::Report> {
 }
 
 // TODO: move this
-pub async fn install_northstar(
-    northstar_dir: &Path,
-    profile: &str,
-    dst: &Path,
-) -> Result<(), Report> {
-    let r2northstar_tmp = northstar_dir.join("R2Northstar");
-    let r2northstar_dst = dst.join(profile);
-    let bin_tmp = northstar_dir.join("bin");
-    let bin_dst = dst.join("bin");
 
-    // since files can be removed we must delete these mods
-    const DELETE_PATHS: [&str; 3] = [
-        "mods/Northstar.Client",
-        "mods/Northstar.Custom",
-        "mods/Northstar.CustomServers",
-    ];
+pub async fn create_backup(file_path: &Path, delete: bool) -> Result<(), Report> {
+    let file_parent = file_path
+        .parent()
+        .ok_or_else(|| eyre!("couldn't find parent for {}", file_path.display()))?;
+    let mut entries = async_walkdir::WalkDir::new(file_parent);
 
-    for path in DELETE_PATHS
-        .iter()
-        .map(|path| r2northstar_dst.join(path))
-        .filter(|path| path.exists())
-    {
-        fs::remove_dir_all(path).await?;
-    }
-
-    use futures_lite::StreamExt;
-
-    // copy r2northstar
-    let mut entries = async_walkdir::WalkDir::new(&r2northstar_tmp);
+    let mut max_backup = 0u32;
+    let file_name = file_path
+        .file_name()
+        .ok_or_else(|| eyre!("couldn't find file name for {}", file_path.display()))?
+        .to_string_lossy();
     while let Some(path) = entries.next().await {
-        let path = path.wrap_err("couldn't get path")?.path();
+        let Ok(path) = path.map(|path| path.path()) else {
+            continue;
+        };
 
-        let copy_path = r2northstar_dst.join(
-            path.strip_prefix(&r2northstar_tmp)
-                .wrap_err("couldn't get relative path")?,
-        );
-
-        if path.is_dir() {
-            fs::create_dir_all(&copy_path)
-                .await
-                .wrap_err("failed to create a new directory in install path")?;
-        } else if path.is_file() {
-            if copy_path.exists() {
-                fs::remove_file(&copy_path)
-                    .await
-                    .wrap_err_with(|| eyre!("failed to delete file {copy_path:?}"))?;
-            }
-            fs::copy(&path, &copy_path)
-                .await
-                .wrap_err_with(|| eyre!("failed to copy file from tmp directory to install directory : {path:?} to {copy_path:?}"))?;
-
-            // when installing from nix store the permissions are all read only
-            #[cfg(target_os = "linux")]
-            if let Ok(file) = fs::File::open(copy_path).await {
-                use std::os::unix::fs::PermissionsExt;
-
-                if let Ok(mut permissions) =
-                    file.metadata().await.map(|metadata| metadata.permissions())
-                {
-                    permissions.set_mode(0o6444);
-                }
-            }
+        if let Some(backup) = path
+            .file_name()
+            .filter(|name| name.to_string_lossy().starts_with(&file_name[..]))
+            .is_none()
+            .then(|| {
+                path.extension()
+                    .map(|extension| extension.to_string_lossy())
+                    .filter(|extension| extension.starts_with("bak"))
+                    .and_then(|extension| {
+                        extension
+                            .split_once("bak")
+                            .map(|(_, right)| right)
+                            .and_then(|backup| backup.parse::<u32>().ok())
+                    })
+            })
+            .flatten()
+        {
+            max_backup = max_backup.max(backup);
         }
     }
 
-    // copy northstar.dll
-    if northstar_dir.join("Northstar.dll").exists() {
-        let northstar_dst = r2northstar_dst.join("Northstar.dll");
-        let pdb_dst = r2northstar_dst.join("Northstar.pdb");
-        if northstar_dst.exists() {
-            fs::remove_file(&northstar_dst)
-                .await
-                .wrap_err_with(|| eyre!("failed to delete file {northstar_dst:?}"))?;
-        }
-        if pdb_dst.exists() {
-            fs::remove_file(&pdb_dst)
-                .await
-                .wrap_err_with(|| eyre!("failed to delete file {pdb_dst :?}"))?;
-        }
-        fs::copy(
-            northstar_dir.join("Northstar.dll"),
-            r2northstar_dst.join("Northstar.dll"),
-        )
-        .await?;
-        _ = fs::copy(
-            northstar_dir.join("Northstar.pdb"),
-            r2northstar_dst.join("Northstar.pdb"),
-        )
-        .await;
+    let backup_path = file_parent.join(file_name.to_string() + ".bak" + &max_backup.to_string());
+    if backup_path.exists() {
+        return Err(eyre!(
+            "somehow a backup was attempt to be made that already existed : {backup_path:?}"
+        ));
     }
 
-    // copy launcher
-    if northstar_dir.join("NorthstarLauncher.exe").exists() {
-        let northstar_dst = dst.join("NorthstarLauncher.exe");
-        let pdb_dst = dst.join("NorthstarLauncher.pdb");
-        if northstar_dst.exists() {
-            fs::remove_file(&northstar_dst)
-                .await
-                .wrap_err_with(|| eyre!("failed to delete file {northstar_dst:?}"))?;
-        }
-        if pdb_dst.exists() {
-            fs::remove_file(&pdb_dst)
-                .await
-                .wrap_err_with(|| eyre!("failed to delete file {pdb_dst :?}"))?;
-        }
-        fs::copy(
-            northstar_dir.join("NorthstarLauncher.exe"),
-            dst.join("NorthstarLauncher.exe"),
-        )
-        .await?;
-        _ = fs::copy(
-            northstar_dir.join("NorthstarLauncher.pdb"),
-            dst.join("NorthstarLauncher.pdb"),
-        )
-        .await;
+    fs::copy(file_path, backup_path)
+        .await
+        .map(|_| ())
+        .wrap_err("failed to copy original to backup")?;
+
+    if delete {
+        fs::remove_file(file_path)
+            .await
+            .wrap_err("failed to remove original file")
+    } else {
+        Ok(())
     }
-
-    // copy bin
-    let mut entries = async_walkdir::WalkDir::new(&bin_tmp);
-    while let Some(path) = entries.next().await {
-        let path = path.wrap_err("couldn't get path")?.path();
-
-        let copy_path = bin_dst.join(
-            path.strip_prefix(&bin_tmp)
-                .wrap_err("couldn't get relative path")?,
-        );
-
-        if path.is_dir() {
-            fs::create_dir_all(&copy_path)
-                .await
-                .wrap_err("failed to create a new directory in install path")?;
-        } else if path.is_file() {
-            if copy_path.exists() {
-                fs::remove_file(&copy_path)
-                    .await
-                    .wrap_err_with(|| eyre!("failed to delete file {copy_path:?}"))?;
-            }
-            fs::copy(&path, &copy_path)
-                .await
-                .wrap_err_with(|| eyre!("failed to copy file from tmp directory to install directory : {path:?} to {copy_path:?}"))?;
-        }
-    }
-
-    Ok(())
 }

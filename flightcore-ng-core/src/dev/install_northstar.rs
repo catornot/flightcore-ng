@@ -5,7 +5,7 @@ use reqwest::Url;
 use std::{path::PathBuf, process::Stdio};
 use tokio::{
     fs,
-    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
 };
 use tracing::info;
@@ -29,8 +29,8 @@ impl NorthstarInstallInfo {
 
     pub async fn try_from_url(mods: Url, launcher: Url) -> Result<Self, Report> {
         Ok(Self {
-            mods_sha: fetch_latest(mods).await?.sha,
-            launcher_sha: fetch_latest(launcher).await?.sha,
+            mods_sha: fetch_latest(mods).await?,
+            launcher_sha: fetch_latest(launcher).await?,
             rpc_sha: None,
         })
     }
@@ -83,7 +83,7 @@ pub async fn get_northstar_from_revs(install: NorthstarInstallInfo) -> Result<Pa
     let lock = tmp_dir()?.join(".lock");
 
     let _lock = fs::File::create(lock).await?;
-    fs::remove_file(out_link.as_path()).await?;
+    _ = fs::remove_file(out_link.as_path()).await;
 
     let err = if flake_dir.exists() {
         info!("updating sources");

@@ -1,5 +1,6 @@
 use color_eyre::eyre::{Report, WrapErr};
 use eyre::eyre;
+use reqwest::Url;
 use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,15 +26,116 @@ pub struct FlightCoreSettings {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Settings {
     pub titanfall2: Vec<PathBuf>,
-    pub profiles: Vec<ProfileSettings>,
-    pub mods: Vec<ModInfo>,
+    profiles: Vec<ProfileSettings>,
+    pub sources: Vec<Source>,
+    pub launch_args: Vec<String>,
+    pub preferred_launch: LaunchMethod,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileSettings {}
+pub struct ProfileSettings {
+    pub name: String,
+    pub titanfall2_path: PathBuf,
+    pub northstar: NorthstarSource,
+    pub sources: Vec<Source>,
+    pub launch_args: Vec<String>,
+    pub ignore_global_launch_args: bool,
+    pub launch_method: LaunchMethod,
+}
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
+pub enum Source {
+    Launcher(LauncherSource),
+    CoreMods(CoreModsSource),
+    DiscordRPC(DiscordRPCSource),
+    Mod(ModInfo),
+    ModRepo(Url),
+    Package(String),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default, Hash)]
 pub struct ModInfo {}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default, Hash)]
+pub enum NorthstarSource {
+    Version(semver::Version),
+    #[default]
+    Stable,
+    Nightly,
+    Ion,
+    Overlayed,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
+pub enum LauncherSource {
+    FromCommit(String),
+    Version(semver::Version),
+    Path(PathBuf),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
+pub enum CoreModsSource {
+    FromCommit(String),
+    Version(semver::Version),
+    Path(PathBuf),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
+pub enum DiscordRPCSource {
+    FromCommit(String),
+    Version(semver::Version),
+    Path(PathBuf),
+}
+
+#[derive(
+    Debug, Clone, Copy, Deserialize, Serialize, Default, Hash, PartialEq, PartialOrd, Ord, Eq,
+)]
+pub enum LaunchMethod {
+    #[default]
+    Any,
+    Steam,
+    Wine,
+    Direct,
+}
+
+impl Source {
+    pub fn as_launcher(&self) -> Option<&LauncherSource> {
+        match self {
+            Self::Launcher(inner) => Some(inner),
+            _ => None,
+        }
+    }
+    pub fn as_core_mods(&self) -> Option<&CoreModsSource> {
+        match self {
+            Self::CoreMods(inner) => Some(inner),
+            _ => None,
+        }
+    }
+    pub fn as_discord_rpc(&self) -> Option<&DiscordRPCSource> {
+        match self {
+            Self::DiscordRPC(inner) => Some(inner),
+            _ => None,
+        }
+    }
+    pub fn as_mod(&self) -> Option<&ModInfo> {
+        match self {
+            Self::Mod(inner) => Some(inner),
+            _ => None,
+        }
+    }
+    pub fn as_mod_repo(&self) -> Option<&Url> {
+        match self {
+            Self::ModRepo(inner) => Some(inner),
+            _ => None,
+        }
+    }
+    pub fn as_package(&self) -> Option<&String> {
+        match self {
+            Self::Package(inner) => Some(inner),
+            _ => None,
+        }
+    }
+}
 
 impl FlightCoreSettings {
     pub async fn load() -> Result<FlightCoreSettings, Report> {
@@ -65,8 +167,33 @@ impl FlightCoreSettings {
         })
     }
 
+    pub fn add_default_profiles(&mut self) -> Option<()> {
+        let titanfall2 = self.get_default_titanfall_path()?.to_owned();
+        if self.get_profile("R2NorthstarStable").is_none() {
+            self.settings.profiles.push(ProfileSettings {
+                name: "R2NorthstarStable".to_string(),
+                titanfall2_path: titanfall2.clone(),
+                northstar: NorthstarSource::Stable,
+                ..Default::default()
+            });
+        }
+        if self.get_profile("R2NorthstarNightly").is_none() {
+            self.settings.profiles.push(ProfileSettings {
+                name: "R2NorthstarNightly".to_string(),
+                titanfall2_path: titanfall2.clone(),
+                northstar: NorthstarSource::Nightly,
+                ..Default::default()
+            });
+        }
+        // bruh who even uses rc s lol
+        // if self.get_profile("R2NorthstarRC").is_none() {}
+
+        Some(())
+    }
+
     pub fn get_titanfall_path_from_profile(&self, profile: &str) -> Option<&Path> {
-        self.settings.titanfall2.first().map(|path| path.as_path())
+        self.get_profile(profile)
+            .map(|profile| profile.titanfall2_path.as_path())
     }
 
     pub fn get_default_titanfall_path(&self) -> Option<&Path> {
@@ -75,6 +202,41 @@ impl FlightCoreSettings {
 
     pub fn add_titanfall_path(&mut self, titanfall: PathBuf) {
         self.settings.titanfall2.push(titanfall);
+    }
+
+    pub fn get_profile(&self, profile_name: &str) -> Option<&ProfileSettings> {
+        self.settings
+            .profiles
+            .iter()
+            .find(|profile| profile.name == profile_name)
+    }
+
+    pub fn get_profile_mut(&mut self, profile_name: &str) -> Option<&mut ProfileSettings> {
+        self.settings
+            .profiles
+            .iter_mut()
+            .find(|profile| profile.name == profile_name)
+    }
+
+    pub fn add_profile(
+        &mut self,
+        profile_name: &str,
+        titanfall2: Option<PathBuf>,
+    ) -> Result<&mut ProfileSettings, Report> {
+        if self.get_profile(profile_name).is_some() {
+            return Err(eyre!("this profile already exists!"));
+        }
+
+        self.settings.profiles.push(ProfileSettings {
+            name: profile_name.to_string(),
+            titanfall2_path: titanfall2
+                .or_else(|| self.get_default_titanfall_path().map(ToOwned::to_owned))
+                .ok_or_else(|| eyre!("no default titanfall path configured"))?,
+            ..Default::default()
+        });
+
+        // the profile just got added
+        Ok(self.get_profile_mut(profile_name).unwrap())
     }
 
     pub async fn save(&self) -> Result<(), Report> {

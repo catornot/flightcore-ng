@@ -1,6 +1,7 @@
 use color_eyre::eyre::{Context, Report, eyre};
 use futures_lite::StreamExt;
 use octocrab::models::repos::Asset;
+use pelite::{FileMap, pe32::Pe as _, pe64::Pe as _};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -395,23 +396,22 @@ async fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
     }
 
     // check version of launcher
-
-    let Ok(dll) = fs::read(profile_path.join("Northstar.dll")).await else {
+    let Ok(dll) = FileMap::open(&profile_path.join("Northstar.dll")) else {
         return false;
     };
 
-    // doesn't work :(
-    _ = goblin::pe::PE::parse(&dll)
-        .inspect_err(|err| error!("couldn't parse Northstar.dll for version : {err}"))
-        .ok()
-        .and_then(|pe| pe.resource_data)
-        .map(|res| {
-            res.version_info
-                .map(|version_info| {
-                    version_info.string_info.product_version().as_deref() == Some(version)
-                })
-                .unwrap_or_default()
+    Some(pelite::pe64::PeFile::from_bytes(&dll).unwrap())
+        .and_then(|pe| pe.resources().ok())
+        .and_then(|resources| resources.version_info().ok())
+        .and_then(|version_info| {
+            let lang = version_info.translation().first()?;
+            let mut correct_version = false;
+            version_info.strings(*lang, |key, value| {
+                if key == "FileVersion" && value.strip_prefix("v").unwrap_or(value) == version {
+                    correct_version = true;
+                }
+            });
+            Some(correct_version)
         })
-        .unwrap_or_default();
-    true
+        .unwrap_or(true)
 }

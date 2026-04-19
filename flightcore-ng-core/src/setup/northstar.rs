@@ -40,6 +40,7 @@ pub async fn bootstrap_northstar(profile: &ProfileSettings, check: Check) -> Res
         return Ok(());
     }
 
+    _ = fs::create_dir_all(tmp_dir()?).await;
     let _lock = fs::File::create(tmp_dir()?.join(".lock")).await?;
 
     match &profile.flavor {

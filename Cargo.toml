@@ -1,8 +1,7 @@
 [workspace]
 resolver = "3"
 
-members = ["flightcore-ng", "flightcore-ng-cli",
-  "flightcore-ng-core"
+members = ["flightcore-ng", "flightcore-ng-cli", "flightcore-ng-core"
 ]
 
 [workspace.dependencies]

@@ -27,6 +27,14 @@
       {
         formatter = pkgs.nixfmt-tree;
 
+        packages = {
+          cli = pkgs.callPackage ./nix/cli.nix { };
+
+          gui = pkgs.callPackage ./nix/gui.nix { };
+
+          default = self.packages.${system}.gui;
+        };
+
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
             toolchain
@@ -34,23 +42,22 @@
             pkgs.zenity
           ];
 
-          
-           runtimeDependencies = with pkgs; [
-              libgcc
-              stdenv.cc
-              zstd
-              libxkbcommon
-              vulkan-loader
-              libx11
-              libxcursor
-              libxi
-              libxrandr
-              alsa-lib-with-plugins
-              wayland
-              glfw
-              udev
-            ];
-            LD_LIBRARY_PATH = nixpkgs.lib.makeLibraryPath self.devShells.${system}.default.runtimeDependencies;
+          runtimeDependencies = with pkgs; [
+            libgcc
+            stdenv.cc
+            zstd
+            libxkbcommon
+            vulkan-loader
+            libx11
+            libxcursor
+            libxi
+            libxrandr
+            alsa-lib-with-plugins
+            wayland
+            glfw
+            udev
+          ];
+          LD_LIBRARY_PATH = nixpkgs.lib.makeLibraryPath self.devShells.${system}.default.runtimeDependencies;
         };
       }
     );

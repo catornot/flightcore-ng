@@ -31,11 +31,39 @@ pub async fn fetch_version(owner: &str, repo: &str, version: &str) -> Result<Vec
     Ok(release.assets.clone())
 }
 
-pub async fn fetch_asset(asset: Asset) -> Result<Bytes, Report> {
-    Ok(reqwest::get(asset.browser_download_url.to_string())
-        .await?
-        .bytes()
-        .await?)
+pub async fn fetch_asset(
+    asset: Asset,
+    mut download_progress: Option<impl FnMut(f32)>,
+) -> Result<Bytes, Report> {
+    let mut response = reqwest::ClientBuilder::new()
+        .build()?
+        .get(asset.browser_download_url.to_string())
+        .send()
+        .await?;
+
+    let mut bytes = Vec::new();
+
+    let length_maybe = response.content_length();
+    let mut remaining = length_maybe;
+    let mut enumerator = 0u64..;
+    while let Some(chunk) = response.chunk().await? {
+        bytes.extend_from_slice(&chunk);
+
+        if let Some(download_progress) = download_progress.as_mut() {
+            download_progress(
+                length_maybe
+                    .and_then(|total| Some((total, remaining.as_mut()?)))
+                    .map(|(total, remaining)| {
+                        let progress = 1. - *remaining as f32 / total as f32;
+                        *remaining -= chunk.len() as u64;
+                        progress
+                    })
+                    .unwrap_or_else(|| enumerator.next().unwrap() as f32),
+            );
+        }
+    }
+
+    Ok(Bytes::from(bytes))
 }
 
 pub async fn fetch_latest_version(owner: &str, repo: &str) -> Result<String, Report> {

@@ -3,10 +3,12 @@ use futures_lite::StreamExt;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+pub mod config;
 pub mod dev;
 pub mod launch;
 pub mod settings;
 pub mod setup;
+pub mod snix_ext;
 
 pub const TITANFALL_ID: u32 = 1237970;
 
@@ -79,4 +81,10 @@ pub async fn create_backup(file_path: &Path, delete: bool) -> Result<(), Report>
     } else {
         Ok(())
     }
+}
+
+pub async fn symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    tokio::fs::symlink(original, link).await
+    // TODO: implement one for windows; it should be possible to have non admin symlinks on windows
 }

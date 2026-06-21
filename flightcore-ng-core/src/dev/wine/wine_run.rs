@@ -2,20 +2,11 @@ use color_eyre::eyre::{Report, eyre};
 use std::path::Path;
 use tracing::info;
 
-use crate::dev::wine::{
-    run_wine_command,
-    wine_install::{install_wine, is_wine_installed, remove_wine},
-};
+use crate::dev::wine::{run_wine_command, wine_install::is_wine_installed};
 
 pub async fn run_game(exe: &Path, launch_args: &[String], vanilla: bool) -> Result<(), Report> {
     if !is_wine_installed() {
-        info!("installing wine prefix");
-
-        // todo add progress bar
-        if let Err(err) = install_wine().await {
-            _ = remove_wine().await;
-            return Err(err);
-        }
+        return Err(eyre!("wine isn't installed! internal error please error"));
     }
 
     info!("launching game at {}", exe.display());

@@ -3,36 +3,26 @@ use color_eyre::eyre::{Report, eyre};
 use crate::{
     TITANFALL_ID,
     dev::wine::wine_run,
-    settings::{FlightCoreSettings, LaunchMethod},
-    setup::setup_profile,
+    settings::LaunchMethod,
+    setup::{setup_profile, sources::Store},
 };
 
 pub async fn launch_northstar(
-    settings: &FlightCoreSettings,
+    store: &Store,
     profile: &str,
     mut launch_args: Vec<String>,
 ) -> Result<(), Report> {
-    let profile = settings
+    let profile = store
         .get_profile(profile)
         .ok_or_else(|| eyre!("profile({profile}) doesn't exist"))?;
 
     setup_profile(profile).await?;
 
-    let launch = if profile.launch_method == LaunchMethod::Any {
-        if cfg!(target_os = "linux") && settings.settings.preferred_launch == LaunchMethod::Steam {
-            LaunchMethod::Steam
-        } else if cfg!(target_os = "linux") {
-            LaunchMethod::Wine
-        } else {
-            LaunchMethod::Direct
-        }
-    } else {
-        profile.launch_method
-    };
+    let launch = get_launch_method(store, profile);
 
     launch_args.extend(profile.launch_args.clone());
     if !profile.ignore_global_launch_args {
-        launch_args.extend(settings.settings.launch_args.clone());
+        launch_args.extend_from_slice(&store.config.launch_args);
     }
 
     match launch {
@@ -80,4 +70,18 @@ pub async fn launch_northstar(
     }
 
     Ok(())
+}
+
+fn get_launch_method(store: &Store, profile: &crate::settings::ProfileConfig) -> LaunchMethod {
+    if profile.launch_method == LaunchMethod::Any {
+        if cfg!(target_os = "linux") && store.config.preferred_launch == LaunchMethod::Steam {
+            LaunchMethod::Steam
+        } else if cfg!(target_os = "linux") {
+            LaunchMethod::Wine
+        } else {
+            LaunchMethod::Direct
+        }
+    } else {
+        profile.launch_method
+    }
 }

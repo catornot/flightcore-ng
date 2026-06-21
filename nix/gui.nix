@@ -6,6 +6,7 @@
   pkg-config,
   umu-launcher,
   zenity,
+  libgit2,
 
   libx11,
   libxcursor,
@@ -15,7 +16,7 @@
   vulkan-loader,
 }:
 let
-  cargoLock = (import ./cargo_lock.nix { });
+  cargoLock = (import ./cargo_lock.nix { inherit lib; });
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   name = "flightcore-ng";
@@ -28,6 +29,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     finalAttrs.rustToolchain
     pkg-config
     makeWrapper
+  ];
+
+  buildInputs = [
+    libgit2
   ];
 
   cargoBuildFlags = [

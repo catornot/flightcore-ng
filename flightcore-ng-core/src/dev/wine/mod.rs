@@ -1,11 +1,14 @@
 use color_eyre::eyre::{Report, eyre};
-use eyre::Context;
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
     process::Stdio,
 };
-use tokio::process::Command;
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    process::{Child, Command},
+};
+use tracing::info;
 
 use crate::local_dir;
 
@@ -22,14 +25,62 @@ const WINE_ENV: &[(&str, &str)] = &[
     ("PROTON_VERB", "run"),
 ];
 
+#[derive(Debug)]
+pub struct Pipes {
+    stdin: Stdio,
+    stdout: Stdio,
+    stderr: Stdio,
+}
+
+impl Default for Pipes {
+    fn default() -> Self {
+        Self {
+            stdin: Stdio::piped(),
+            stdout: Stdio::piped(),
+            stderr: Stdio::piped(),
+        }
+    }
+}
+
+pub fn add_wine_command(
+    mut command: Command,
+    arg: impl AsRef<OsStr>,
+    args: impl Iterator<Item = impl AsRef<OsStr>>,
+    work_dir: Option<&Path>,
+    piped: Option<Pipes>,
+) -> Result<Command, Report> {
+    let proton = proton_dir()?;
+    let wine_prefix = wine_dir()?;
+    let piped = piped.unwrap_or_default();
+
+    command
+        .arg("umu-run")
+        .envs(WINE_ENV.iter().copied())
+        .env("WINEPREFIX", wine_prefix)
+        .env("PROTONPATH", proton)
+        .args(["start.exe", "/b", "/unix"])
+        .arg(arg)
+        .args(args)
+        .stdout(piped.stdout)
+        .stderr(piped.stderr)
+        .stdin(piped.stdin);
+
+    if let Some(work_dir) = work_dir {
+        command.current_dir(work_dir);
+    }
+
+    Ok(command)
+}
+
 pub async fn run_wine_command(
     arg: impl AsRef<OsStr>,
     args: impl Iterator<Item = impl AsRef<OsStr>>,
     work_dir: Option<&Path>,
-    piped: Option<Stdio>,
+    piped: Option<Pipes>,
 ) -> Result<String, Report> {
     let proton = proton_dir()?;
     let wine_prefix = wine_dir()?;
+    let piped = piped.unwrap_or_default();
 
     let mut command = Command::new("umu-run");
     command
@@ -43,14 +94,17 @@ pub async fn run_wine_command(
         command.current_dir(work_dir);
     }
 
-    let piped = piped.unwrap_or(Stdio::inherit());
-    let output = command.stdout(piped).output().await?;
+    let command = command
+        .stdin(piped.stdin)
+        .stdout(piped.stdout)
+        .stderr(piped.stderr);
 
-    if !output.status.success() {
-        return Err(eyre!(String::from_utf8(output.stderr)?)).wrap_err("couldn't run wine command");
-    }
+    let mut child = command.spawn()?;
 
-    Ok(String::from_utf8(output.stdout).unwrap_or_default())
+    // print_and_collect_errors(child, "umu-run").await?;
+    child.wait().await?;
+
+    Ok("".to_string())
 }
 
 pub fn proton_dir() -> Result<PathBuf, Report> {

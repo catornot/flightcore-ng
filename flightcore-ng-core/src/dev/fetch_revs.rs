@@ -29,16 +29,15 @@ async fn fetch_latest_from_pr(pr: Url) -> Result<String> {
 
     let number = number.parse::<u64>().wrap_err("not a valid pr number")?;
 
+    // TODO: cycle through all possible commits somehow
     octocrab::instance()
         .pulls("R2Northstar", repo)
         .pr_commits(number)
-        .per_page(1)
-        .page(1u32)
         .send()
         .await
         .wrap_err("fetch pr failed")?
         .items
-        .first()
+        .last()
         .cloned()
         .ok_or_else(|| eyre!("no commits"))
         .map(|commit| commit.sha)

@@ -3,7 +3,7 @@ use color_eyre::eyre::Result;
 use eyre::{Context, eyre};
 use flightcore_ng_core::{
     TITANFALL_ID, create_backup,
-    dev::fetch_revs::fetch_latest,
+    dev::{fetch_revs::fetch_latest, wine::wine_run},
     launch::launch_northstar,
     settings::{
         CoreModsSource, DiscordRPCSource, FlightCoreSettings, LauncherSource, NorthstarSource,
@@ -63,6 +63,15 @@ enum Commands {
         profile: Option<String>,
     },
 
+    #[command(name = "debug")]
+    LaunchDebug {
+        #[arg(value_name = "passthrough args", value_hint = ValueHint::Url)]
+        passthrough: Vec<String>,
+
+        #[clap(long, short, value_name = "profile", value_hint = ValueHint::Other)]
+        profile: Option<String>,
+    },
+
     #[command(name = "edit")]
     Edit {
         #[arg(value_name = "editor path", value_hint = ValueHint::AnyPath)]
@@ -105,6 +114,10 @@ async fn main() -> Result<()> {
             passthrough: _,
             profile,
         }
+        | Commands::LaunchDebug {
+            passthrough: _,
+            profile,
+        }
         | Commands::Open { profile }
             if profile.is_some() =>
         {
@@ -119,6 +132,10 @@ async fn main() -> Result<()> {
         }
         | Commands::Edit { editor: _ }
         | Commands::LaunchWine {
+            passthrough: _,
+            profile: _,
+        }
+        | Commands::LaunchDebug {
             passthrough: _,
             profile: _,
         }
@@ -231,6 +248,33 @@ async fn main() -> Result<()> {
                 &settings,
                 profile.as_deref().unwrap_or("R2NorthstarStable"),
                 passthrough,
+            )
+            .await?;
+        }
+
+        Commands::LaunchDebug {
+            mut passthrough,
+            profile,
+        } => {
+            if let Some(profile) = profile.as_ref() {
+                info!("using profile {profile}");
+                passthrough.push(format!("-profile={profile}"));
+            }
+
+            let profile = settings
+                .get_profile(profile.as_deref().unwrap_or("R2NorthstarStable"))
+                .unwrap();
+
+            passthrough.extend(profile.launch_args.clone());
+            if !profile.ignore_global_launch_args {
+                passthrough.extend(settings.settings.launch_args.clone());
+            }
+
+            wine_run::run_game(
+                &profile.titanfall2_path.join("NorthstarLauncher.exe"),
+                &passthrough,
+                false,
+                true,
             )
             .await?;
         }

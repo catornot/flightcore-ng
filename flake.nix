@@ -20,6 +20,7 @@
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ (import rust-overlay) ];
+          config.allowUnfree = true;
         };
         toolchain = (pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
 
@@ -32,6 +33,26 @@
 
           gui = pkgs.callPackage ./nix/gui.nix { };
 
+          mingw-gdb = pkgs.callPackage ./nix/mingw-gdb.nix {
+            inherit (self.packages.${system})
+              mingw-stdlibcpp
+              mingw-libgcc
+              mingw-winpthreads
+              mingw-expat
+              mingw-gmp
+              mingw-mpfr
+mingw-filesystem       mingw-crt       ;
+          };
+          mingw-libgcc = pkgs.callPackage ./nix/mingw-libgcc.nix { };
+          mingw-stdlibcpp = pkgs.callPackage ./nix/mingw-libstdcpp.nix {
+          };
+          mingw-winpthreads = pkgs.callPackage ./nix/mingw-winpthreads.nix { };
+          mingw-expat = pkgs.callPackage ./nix/mingw-expat.nix { };
+          mingw-gmp = pkgs.callPackage ./nix/mingw-gmp.nix { };
+          mingw-mpfr = pkgs.callPackage ./nix/mingw-mpfr.nix { };
+          mingw-filesystem= pkgs.callPackage ./nix/mingw-filesystem.nix { };
+          mingw-crt= pkgs.callPackage ./nix/mingw-crt.nix { };
+
           default = self.packages.${system}.gui;
         };
 
@@ -40,6 +61,7 @@
             toolchain
             pkgs.umu-launcher
             pkgs.zenity
+            (self.packages.${system}.mingw-gdb)
           ];
 
           runtimeDependencies = with pkgs; [

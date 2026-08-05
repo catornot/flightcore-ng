@@ -52,6 +52,7 @@ pub async fn launch_northstar(
                 &profile.titanfall2_path.join("NorthstarLauncher.exe"),
                 &launch_args,
                 false,
+                false,
             )
             .await?;
         }
@@ -73,6 +74,7 @@ pub async fn launch_northstar(
             wine_run::run_game(
                 &profile.titanfall2_path.join("NorthstarLauncher.exe"),
                 &launch_args,
+                false,
                 false,
             )
             .await?;

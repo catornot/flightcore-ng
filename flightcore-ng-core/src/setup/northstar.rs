@@ -10,14 +10,14 @@ use tokio::{
     fs,
     io::{AsyncReadExt, AsyncWriteExt},
 };
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::{
     dev::{
         fetch_releases::{self, fetch_asset, fetch_latest_version},
         install_northstar::{NorthstarInstallInfo, get_northstar_from_revs},
     },
-    settings::ProfileConfig,
+    settings::ProfileSettings,
     tmp_dir,
 };
 
@@ -34,22 +34,10 @@ const CORE_MODS: [&str; 3] = [
     "mods/Northstar.CustomServers",
 ];
 
-pub async fn bootstrap_northstar(profile: &ProfileConfig, check: Check) -> Result<(), Report> {
+pub async fn bootstrap_northstar(profile: &ProfileSettings, check: Check) -> Result<(), Report> {
     if check == Check::Skip {
         info!("skipping bootstrap");
         return Ok(());
-    }
-
-    // remove Northstar.dll from root of titanfall2 since it gets priority over the Northstar.dll in profiles
-    if profile.titanfall2_path.join("Northstar.dll").exists() {
-        let root_northstar = profile.titanfall2_path.join("Northstar.dll");
-        warn!(
-            "found a Northstar.dll in {}",
-            profile.titanfall2_path.display()
-        );
-        warn!("this will prevent profiles from working correctly");
-        warn!("removing {}", root_northstar.display());
-        fs::remove_file(root_northstar).await?;
     }
 
     _ = fs::create_dir_all(tmp_dir()?).await;
@@ -256,7 +244,7 @@ pub async fn bootstrap_northstar(profile: &ProfileConfig, check: Check) -> Resul
     Ok(())
 }
 
-async fn download_northstar_latest(profile: &ProfileConfig) -> Result<(), Report> {
+async fn download_northstar_latest(profile: &ProfileSettings) -> Result<(), Report> {
     let northstar_asset = fetch_releases::fetch_latest("R2Northstar", "Northstar")
         .await?
         .into_iter()
@@ -271,7 +259,7 @@ async fn download_northstar_latest(profile: &ProfileConfig) -> Result<(), Report
 }
 
 async fn download_northstar_version(
-    profile: &ProfileConfig,
+    profile: &ProfileSettings,
     version: &Version,
 ) -> Result<(), Report> {
     let northstar_asset =
@@ -288,7 +276,7 @@ async fn download_northstar_version(
     Ok(())
 }
 
-async fn download_latest_nightly(profile: &ProfileConfig) -> Result<(), Report> {
+async fn download_latest_nightly(profile: &ProfileSettings) -> Result<(), Report> {
     let northstar_asset = fetch_releases::fetch_latest("catornot", "northstar-nightly")
         .await?
         .into_iter()
@@ -302,7 +290,7 @@ async fn download_latest_nightly(profile: &ProfileConfig) -> Result<(), Report> 
     Ok(())
 }
 
-async fn download_ion_latest(profile: &ProfileConfig) -> Result<(), Report> {
+async fn download_ion_latest(profile: &ProfileSettings) -> Result<(), Report> {
     let ion_asset = fetch_releases::fetch_latest("r2ion", "Ion")
         .await?
         .into_iter()
@@ -317,11 +305,10 @@ async fn download_ion_latest(profile: &ProfileConfig) -> Result<(), Report> {
 }
 
 async fn install_northstar_release_asset(
-    profile: &ProfileConfig,
+    profile: &ProfileSettings,
     northstar_asset: Asset,
 ) -> Result<(), Report> {
-    const THUNK: fn(f32) = |_| {};
-    let bytes = fetch_asset(northstar_asset, Some(THUNK).filter(|_| false))
+    let bytes = fetch_asset(northstar_asset)
         .await
         .wrap_err("no assets found")?;
     let cursor = Cursor::new(bytes);
@@ -480,7 +467,7 @@ pub async fn install_northstar(
     Ok(())
 }
 
-async fn check_if_installed(profile: &ProfileConfig, version: &str) -> bool {
+async fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
     #[serde(rename_all = "PascalCase")]
     pub struct ModStub {

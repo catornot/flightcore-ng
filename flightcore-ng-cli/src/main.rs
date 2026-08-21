@@ -249,6 +249,7 @@ async fn main() -> Result<()> {
                 profile.as_deref().unwrap_or("R2NorthstarStable"),
                 passthrough,
             )
+            .await?
             .await?;
         }
 

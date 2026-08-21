@@ -4,11 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::Stdio,
 };
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::{Child, Command},
-};
-use tracing::info;
+use tokio::process::Command;
 
 use crate::local_dir;
 

@@ -12,7 +12,7 @@ use tokio::{
 use tracing::info;
 
 use crate::dev::wine::{
-    Pipes, add_wine_command, run_wine_command,
+    Pipes, run_wine_command,
     wine_install::{install_wine, is_wine_installed, remove_wine},
 };
 
@@ -206,38 +206,38 @@ async fn run_debug(exe: PathBuf, mut launch_args: Vec<String>) -> Result<(), Rep
 //     game_task.await?
 // }
 
-async fn print_and_collect_errors(
-    mut child: tokio::process::Child,
-    command: &str,
-) -> Result<(), Report> {
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| eyre!("couldn't capture stdout for {command}"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| eyre!("couldn't capture stdout for {command}"))?;
+// async fn print_and_collect_errors(
+//     mut child: tokio::process::Child,
+//     command: &str,
+// ) -> Result<(), Report> {
+//     let stdout = child
+//         .stdout
+//         .take()
+//         .ok_or_else(|| eyre!("couldn't capture stdout for {command}"))?;
+//     let stderr = child
+//         .stderr
+//         .take()
+//         .ok_or_else(|| eyre!("couldn't capture stdout for {command}"))?;
 
-    let stdout_handle = tokio::spawn(async move {
-        let mut reader = BufReader::new(stdout).lines();
+//     let stdout_handle = tokio::spawn(async move {
+//         let mut reader = BufReader::new(stdout).lines();
 
-        while let Some(line) = reader.next_line().await.ok().flatten() {
-            info!("{}", line);
-        }
-    });
+//         while let Some(line) = reader.next_line().await.ok().flatten() {
+//             info!("{}", line);
+//         }
+//     });
 
-    let stderr_handle = tokio::spawn(async move {
-        let mut reader = BufReader::new(stderr).lines();
+//     let stderr_handle = tokio::spawn(async move {
+//         let mut reader = BufReader::new(stderr).lines();
 
-        while let Some(line) = reader.next_line().await.ok().flatten() {
-            info!("{}", line);
-        }
-    });
+//         while let Some(line) = reader.next_line().await.ok().flatten() {
+//             info!("{}", line);
+//         }
+//     });
 
-    child.wait().await?;
-    stdout_handle.await?;
-    stderr_handle.await?;
+//     child.wait().await?;
+//     stdout_handle.await?;
+//     stderr_handle.await?;
 
-    Ok(())
-}
+//     Ok(())
+// }

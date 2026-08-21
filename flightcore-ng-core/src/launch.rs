@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 use color_eyre::eyre::{Report, eyre};
 
 use crate::{
@@ -11,7 +13,7 @@ pub async fn launch_northstar(
     settings: &FlightCoreSettings,
     profile: &str,
     mut launch_args: Vec<String>,
-) -> Result<(), Report> {
+) -> Result<Pin<Box<dyn Future<Output = Result<(), Report>> + 'static + Send>>, Report> {
     let profile = settings
         .get_profile(profile)
         .ok_or_else(|| eyre!("profile({profile}) doesn't exist"))?;
@@ -35,7 +37,8 @@ pub async fn launch_northstar(
         launch_args.extend(settings.settings.launch_args.clone());
     }
 
-    match launch {
+    let exe = profile.titanfall2_path.join("NorthstarLauncher.exe");
+    let runner: Pin<Box<dyn Future<Output = Result<(), Report>> + Send>> = match launch {
         LaunchMethod::Steam => {
             open::that_detached(format!(
                 "steam://run/{}//-profile={} --northstar {}/",
@@ -46,15 +49,10 @@ pub async fn launch_northstar(
                     .map(|arg| arg + "  ")
                     .collect::<String>()
             ))?;
+            Box::pin(wait_for_northstar())
         }
         LaunchMethod::Wine => {
-            wine_run::run_game(
-                &profile.titanfall2_path.join("NorthstarLauncher.exe"),
-                &launch_args,
-                false,
-                false,
-            )
-            .await?;
+            Box::pin(async move { wine_run::run_game(&exe, &launch_args, false, false).await })
         }
         LaunchMethod::Direct | LaunchMethod::Any if cfg!(target_os = "windows") => {
             open::that_detached(format!(
@@ -69,17 +67,16 @@ pub async fn launch_northstar(
                     .map(|arg| arg + "  ")
                     .collect::<String>()
             ))?;
+            Box::pin(wait_for_northstar())
         }
         LaunchMethod::Any | LaunchMethod::Direct => {
-            wine_run::run_game(
-                &profile.titanfall2_path.join("NorthstarLauncher.exe"),
-                &launch_args,
-                false,
-                false,
-            )
-            .await?;
+            Box::pin(async move { wine_run::run_game(&exe, &launch_args, false, false).await })
         }
-    }
+    };
 
+    Ok(runner)
+}
+
+async fn wait_for_northstar() -> Result<(), Report> {
     Ok(())
 }

@@ -204,6 +204,14 @@ impl FlightCoreSettings {
         self.settings.titanfall2.push(titanfall);
     }
 
+    pub fn get_profiles(&self) -> &[ProfileSettings] {
+        &self.settings.profiles
+    }
+
+    pub fn get_default_profile(&self) -> Option<&ProfileSettings> {
+        self.settings.profiles.first()
+    }
+
     pub fn get_profile(&self, profile_name: &str) -> Option<&ProfileSettings> {
         self.settings
             .profiles

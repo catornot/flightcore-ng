@@ -499,7 +499,11 @@ async fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
 
     // check version of launcher
     let Ok(dll) = FileMap::open(&profile_path.join("Northstar.dll")) else {
-        return false;
+        info!(
+            "no file map found for {}",
+            profile_path.join("Northstar.dll").display()
+        );
+        return true;
     };
 
     Some(pelite::pe64::PeFile::from_bytes(&dll).unwrap())
@@ -509,7 +513,14 @@ async fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
             let lang = version_info.translation().first()?;
             let mut correct_version = false;
             version_info.strings(*lang, |key, value| {
-                if key == "FileVersion" && value.strip_prefix("v").unwrap_or(value) == version {
+                if key == "FileVersion"
+                    && value
+                        .strip_prefix("v")
+                        .unwrap_or(value)
+                        .split(".")
+                        .zip(version.split("."))
+                        .all(|(local, remote)| local == remote)
+                {
                     correct_version = true;
                 }
             });

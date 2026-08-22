@@ -32,7 +32,7 @@ pub async fn run_game(
         }
     }
 
-    info!("launching game at {}", exe.display());
+    info!("launching game at {} with {:?}", exe.display(), launch_args);
 
     // we need -noOriginStartup for maxima
     let mut extra_args = Vec::from_iter(

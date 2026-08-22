@@ -2,14 +2,21 @@ use std::sync::Arc;
 
 use flightcore_ng_core::settings::FlightCoreSettings;
 use iced::{
-    Element, Length, Task,
-    widget::{Row, button, column},
+    Color, Element, Length, Task,
+    alignment::{Horizontal, Vertical},
+    widget::{column, container, space},
 };
+use iced_aw::{TabLabel, widgets::TabBar};
 use tokio::sync::RwLock;
 
-use crate::{Message, screen::launch::LaunchScreen};
+use crate::{
+    Message,
+    screen::{launch::LaunchScreen, mods::ModsScreen, profiles::ProfilesScreen},
+};
 
 pub mod launch;
+pub mod mods;
+pub mod profiles;
 
 #[derive(Debug)]
 pub struct Screens {
@@ -18,33 +25,54 @@ pub struct Screens {
 }
 
 impl Screens {
-    pub fn new(settings: Arc<RwLock<FlightCoreSettings>>) -> Self {
+    pub fn new(settings: &Arc<RwLock<FlightCoreSettings>>) -> Self {
         Self {
-            screens: vec![Box::new(LaunchScreen::new(Arc::clone(&settings)))],
+            screens: vec![
+                Box::new(LaunchScreen::new(Arc::clone(settings))),
+                Box::new(ModsScreen::new(Arc::clone(settings))),
+                Box::new(ProfilesScreen::new(Arc::clone(settings))),
+            ],
             active: 0,
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        let bar = self.create_bar();
+
         column![
-            Row::from_vec(
-                self.screens
-                    .iter()
-                    .map(|screen| screen.name())
-                    .enumerate()
-                    .map(|(index, name)| button(name)
-                        .on_press(Message::Screens(ScreensMessage::SwitchActiveScren(index)))
-                        .into())
-                    .collect(),
-            )
-            .spacing(30)
-            .width(Length::Fill),
+            bar,
+            space().height(Length::Fixed(10.)),
             self.screens
                 .get(self.active)
                 .unwrap_or_else(|| self.screens.first().expect("must have at least one screen"))
                 .view()
         ]
         .into()
+    }
+
+    fn create_bar(&self) -> Element<'_, Message> {
+        let bar = TabBar::with_tab_labels(
+            self.screens
+                .iter()
+                .map(|screen| screen.label())
+                .enumerate()
+                .collect(),
+            |tab_id| Message::Screens(ScreensMessage::SwitchActiveScren(tab_id)),
+        )
+        .tab_width(Length::Shrink)
+        .style(|theme, status| iced_aw::tab_bar::Style {
+            text_color: Color::BLACK,
+            ..iced_aw::style::tab_bar::primary(theme, status)
+        })
+        .spacing(25)
+        .set_active_tab(&self.active)
+        .width(Length::Shrink);
+
+        container(bar)
+            .align_y(Vertical::Center)
+            .align_x(Horizontal::Center)
+            .width(Length::Fill)
+            .into()
     }
 
     pub fn update(&mut self, message: ScreensMessage) -> Task<Message> {
@@ -70,10 +98,16 @@ impl Screens {
 pub enum ScreensMessage {
     SwitchActiveScren(usize),
     SwitchProfile(String),
-    LaunchGame { profile: String },
+    LaunchGame {
+        profile: String,
+    },
     GameEnded(Result<(), String>),
-    ServersUpdated(u32),
-    PlayersUpdated(u32),
+    ServerStatsUpdate {
+        players_count: u32,
+        servers_count: u32,
+    },
+    Startup,
+    NewNorthstarVersion(Option<String>),
 }
 
 pub trait Screen: std::fmt::Debug {
@@ -81,5 +115,5 @@ pub trait Screen: std::fmt::Debug {
 
     fn update(&mut self, message: &mut ScreensMessage) -> Option<Task<Message>>;
 
-    fn name(&self) -> &'static str;
+    fn label(&self) -> TabLabel;
 }

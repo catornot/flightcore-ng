@@ -1,6 +1,6 @@
-use std::pin::Pin;
-
 use color_eyre::eyre::{Report, eyre};
+use std::pin::Pin;
+use tracing::info;
 
 use crate::{
     TITANFALL_ID,
@@ -19,6 +19,9 @@ pub async fn launch_northstar(
         .ok_or_else(|| eyre!("profile({profile}) doesn't exist"))?;
 
     setup_profile(profile).await?;
+
+    info!("using profile {}", profile.name);
+    launch_args.push(format!("-profile={}", profile.name));
 
     let launch = if profile.launch_method == LaunchMethod::Any {
         if cfg!(target_os = "linux") && settings.settings.preferred_launch == LaunchMethod::Steam {

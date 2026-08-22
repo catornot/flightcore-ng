@@ -237,13 +237,9 @@ async fn main() -> Result<()> {
         Commands::InstallMod {} => todo!(),
         Commands::InstallRepos {} => todo!(),
         Commands::LaunchWine {
-            mut passthrough,
+            passthrough,
             profile,
         } => {
-            if let Some(profile) = profile.as_ref() {
-                info!("using profile {profile}");
-                passthrough.push(format!("-profile={profile}"));
-            }
             launch_northstar(
                 &settings,
                 profile.as_deref().unwrap_or("R2NorthstarStable"),

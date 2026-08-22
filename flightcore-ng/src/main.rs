@@ -1,7 +1,9 @@
-use std::sync::Arc;
+#![warn(clippy::pedantic, clippy::nursery)]
+#![allow(clippy::unused_self)]
 
 use flightcore_ng_core::settings::FlightCoreSettings;
 use iced::{Element, Task, Theme};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
@@ -19,7 +21,6 @@ enum Message {
 #[derive(Debug)]
 struct FlightCore {
     screen: Screens,
-    settings: Arc<RwLock<FlightCoreSettings>>,
 }
 
 fn main() -> iced::Result {
@@ -36,15 +37,18 @@ fn main() -> iced::Result {
                     .unwrap(),
             ));
 
-            FlightCore {
-                screen: Screens::new(Arc::clone(&settings)),
-                settings,
-            }
+            (
+                FlightCore {
+                    screen: Screens::new(&settings),
+                },
+                Task::done(Message::Screens(ScreensMessage::Startup)),
+            )
         },
         FlightCore::update,
         FlightCore::view,
     )
     .theme(FlightCore::theme)
+    .title("flightcore-ng")
     .run()
 }
 
@@ -67,7 +71,7 @@ impl FlightCore {
         self.screen.view()
     }
 
-    fn theme(&self) -> Theme {
+    const fn theme(&self) -> Theme {
         Theme::Ferra
     }
 }

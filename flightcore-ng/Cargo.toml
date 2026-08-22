@@ -21,3 +21,4 @@ tracing-subscriber = { workspace = true }
 flightcore-ng-core = { workspace = true }
 
 iced = { version = "0.14.0", features = [ "tokio" ] }
+iced_aw = { version = "0.14.1", default-features = false, features = ["tabs", "tab_bar", "menu", "drop_down", "context_menu", "spinner", "card", "log"] }

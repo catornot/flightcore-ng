@@ -9,6 +9,7 @@ use std::{collections::HashMap, io::Cursor, path::Path};
 use tokio::{
     fs,
     io::{AsyncReadExt, AsyncWriteExt},
+    task::block_in_place,
 };
 use tracing::{error, info};
 
@@ -28,7 +29,7 @@ pub enum Check {
     Check,
 }
 
-const CORE_MODS: [&str; 3] = [
+pub const CORE_MODS: [&str; 3] = [
     "mods/Northstar.Client",
     "mods/Northstar.Custom",
     "mods/Northstar.CustomServers",
@@ -468,6 +469,15 @@ pub async fn install_northstar(
 }
 
 async fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
+    let profile_path = profile.titanfall2_path.join(&profile.name);
+    if !profile_path.exists() {
+        return false;
+    }
+
+    block_in_place(|| check_mods_and_dll(version, profile_path))
+}
+
+fn check_mods_and_dll(version: &str, profile_path: std::path::PathBuf) -> bool {
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
     #[serde(rename_all = "PascalCase")]
     pub struct ModStub {
@@ -476,21 +486,20 @@ async fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
         pub _extra: HashMap<String, Value>,
     }
 
-    let profile_path = profile.titanfall2_path.join(&profile.name);
-    if !profile_path.exists() {
-        return false;
-    }
-
     // check version of core mods
     if CORE_MODS
         .iter()
         .any(|mod_path| !profile_path.join(mod_path).exists())
         && CORE_MODS.iter().any(|mod_path| {
-            // non async but hopefully it's fine
             !std::fs::read_to_string(profile_path.join(mod_path).join("mod.json"))
                 .ok()
                 .and_then(|content| serde_json::from_str(&content).ok())
-                .map(|stub: ModStub| stub.version == version)
+                .map(|stub: ModStub| {
+                    stub.version
+                        .split(".")
+                        .zip(version.split("."))
+                        .all(|(local, remote)| local == remote)
+                })
                 .unwrap_or_default()
         })
     {

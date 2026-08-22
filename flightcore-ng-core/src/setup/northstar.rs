@@ -16,7 +16,7 @@ use tracing::{error, info};
 use crate::{
     dev::{
         fetch_releases::{self, fetch_asset, fetch_latest_version},
-        install_northstar::{NorthstarInstallInfo, get_northstar_from_revs},
+        install_northstar::{NorthstarInstallHashes, get_northstar_from_revs},
     },
     settings::ProfileSettings,
     tmp_dir,
@@ -45,202 +45,229 @@ pub async fn bootstrap_northstar(profile: &ProfileSettings, check: Check) -> Res
     let _lock = fs::File::create(tmp_dir()?.join(".lock")).await?;
 
     match &profile.flavor {
-        crate::settings::NorthstarSource::Version(version) => 'version: {
-            // yes this is not very efficient but it's either here or in stable
-            if check_if_installed(profile, version.to_string().as_str()).await
-                && check == Check::Force
-            {
-                info!("bootstrap: version already matches doing nothing");
-                break 'version;
-            }
-
-            download_northstar_version(profile, version).await?;
+        crate::settings::NorthstarSource::Version(version) => {
+            setup_version(profile, check, version).await?;
         }
-        crate::settings::NorthstarSource::Stable => 'stable: {
-            let version = match fetch_latest_version("R2Northstar", "Northstar")
-                .await
-                .wrap_err("couldn't fetch latest northstar version")
-            {
-                Err(err) => {
-                    // could be because of network issue so an update isn't even possible anyway
-                    error!("{err}");
-                    return Ok(());
-                }
-                Ok(version) => version,
-            };
-
-            if check_if_installed(profile, &version).await {
-                info!("bootstrap: version already matches doing nothing");
-                break 'stable;
-            }
-
-            download_northstar_latest(profile).await?;
+        crate::settings::NorthstarSource::Stable => {
+            setup_stable(profile).await?;
         }
-        crate::settings::NorthstarSource::Nightly => 'nightly: {
-            'version_check: {
-                // break if the profile doesn't even exist
-                if !profile.titanfall2_path.join(&profile.name).exists() {
-                    break 'version_check;
-                }
-
-                let version_file_path = profile
-                    .titanfall2_path
-                    .join(&profile.name)
-                    .join("nightly-ver");
-                let mut file = match fs::File::open(&version_file_path).await {
-                    Ok(file) => file,
-                    Err(err) => match fs::File::create_new(version_file_path)
-                        .await
-                        .wrap_err(err)
-                        .wrap_err("couldn't open version file for nightly build")
-                    {
-                        Ok(file) => file,
-                        Err(err) => {
-                            error!("{err}");
-                            error!("no updates can be done!");
-                            break 'nightly;
-                        }
-                    },
-                };
-                let mut version = String::new();
-                _ = file.read_to_string(&mut version).await;
-
-                let latest_version = fetch_releases::fetch_latest("catornot", "northstar-nightly")
-                    .await?
-                    .into_iter()
-                    .find(|asset| asset.name.contains("northstar-nightly"))
-                    .map(|asset| asset.name)
-                    .unwrap_or_default();
-                if version == latest_version {
-                    info!("bootstrap: nightly version seems to be matching doing nothing");
-                    break 'nightly;
-                }
-
-                _ = file.write_all_buf(&mut latest_version.as_bytes()).await;
-            }
-
-            download_latest_nightly(profile).await?;
+        crate::settings::NorthstarSource::Nightly => {
+            setup_nightly(profile).await?;
         }
         crate::settings::NorthstarSource::Overlayed => {
-            if check == Check::Check {
-                info!(
-                    "northstar with overlay will not self bootstrap since it's not possible to tell trivially if things have changed or not"
-                );
-            } else {
-                let launcher = profile
-                    .sources
-                    .iter()
-                    .find_map(|source| source.as_launcher());
-                let mods = profile
-                    .sources
-                    .iter()
-                    .find_map(|source| source.as_core_mods());
-                let discord_rpc = profile
-                    .sources
-                    .iter()
-                    .find_map(|source| source.as_discord_rpc());
-
-                let (Some(launcher), Some(mods)) = (launcher, mods) else {
-                    return Err(eyre!(
-                        "cannot bootstrap northstar in overlay mode without launcher and mods specified"
-                    ));
-                };
-
-                match (launcher, mods, discord_rpc) {
-                    (
-                        crate::settings::LauncherSource::FromCommit(launcher),
-                        crate::settings::CoreModsSource::FromCommit(mods),
-                        Some(crate::settings::DiscordRPCSource::FromCommit(discord_rpc)),
-                    ) => {
-                        install_northstar(
-                            &get_northstar_from_revs(
-                                NorthstarInstallInfo::new(mods.clone(), launcher.clone())
-                                    .with_discord_rpc(discord_rpc.clone()),
-                            )
-                            .await?,
-                            &profile.name,
-                            &profile.titanfall2_path,
-                        )
-                        .await?;
-                    }
-                    (
-                        crate::settings::LauncherSource::FromCommit(launcher),
-                        crate::settings::CoreModsSource::FromCommit(mods),
-                        None,
-                    ) => {
-                        install_northstar(
-                            &get_northstar_from_revs(NorthstarInstallInfo::new(
-                                mods.clone(),
-                                launcher.clone(),
-                            ))
-                            .await?,
-                            &profile.name,
-                            &profile.titanfall2_path,
-                        )
-                        .await?;
-                    }
-                    (
-                        crate::settings::LauncherSource::Path(launcher),
-                        crate::settings::CoreModsSource::Path(mods),
-                        _,
-                    ) => {
-                        #[cfg(target_os = "linux")]
-                        {
-                            _ = fs::remove_file(
-                                profile
-                                    .titanfall2_path
-                                    .join(&profile.name)
-                                    .join("Northstar.dll"),
-                            )
-                            .await;
-                            _ = fs::symlink(
-                                launcher.join("build").join("game").join("Northstar.dll"),
-                                profile
-                                    .titanfall2_path
-                                    .join(&profile.name)
-                                    .join("Northstar.dll"),
-                            )
-                            .await;
-                            for (top, mod_path) in CORE_MODS
-                                .into_iter()
-                                .map(|path| profile.titanfall2_path.join(&profile.name).join(path))
-                                .filter_map(|path| {
-                                    Some((
-                                        path.components().next()?.as_os_str().to_os_string(),
-                                        path,
-                                    ))
-                                })
-                            {
-                                _ = fs::remove_file(&mod_path).await;
-                                _ = fs::symlink(mods.join(top), mod_path).await;
-                            }
-                        }
-                    }
-                    _ => todo!("other overlays are not supported yet"),
-                };
-            }
+            setup_overlayed(profile, check).await?;
         }
-        crate::settings::NorthstarSource::Ion => 'ion: {
-            let version = match fetch_latest_version("r2ion", "Ion")
-                .await
-                .wrap_err("couldn't fetch latest ion version")
-            {
-                Err(err) => {
-                    // could be because of network issue so an update isn't even possible anyway
-                    error!("{err}");
-                    return Ok(());
-                }
-                Ok(version) => version,
-            };
-
-            if check_if_installed(profile, &version).await {
-                info!("bootstrap: version already matches doing nothing");
-                break 'ion;
-            }
-
-            download_ion_latest(profile).await?;
+        crate::settings::NorthstarSource::Ion => {
+            setup_ion(profile).await?;
         }
     }
+
+    Ok(())
+}
+
+async fn setup_version(
+    profile: &ProfileSettings,
+    check: Check,
+    version: &Version,
+) -> Result<(), Report> {
+    if check_if_installed(profile, version.to_string().as_str()) && check != Check::Force {
+        info!("bootstrap: version already matches doing nothing");
+        return Ok(());
+    }
+
+    download_northstar_version(profile, version).await?;
+    Ok(())
+}
+
+async fn setup_stable(profile: &ProfileSettings) -> Result<(), Report> {
+    let version = match fetch_latest_version("R2Northstar", "Northstar")
+        .await
+        .wrap_err("couldn't fetch latest northstar version")
+    {
+        Err(err) => {
+            // could be because of network issue so an update isn't even possible anyway
+            error!("{err}");
+            return Ok(());
+        }
+        Ok(version) => version,
+    };
+
+    if check_if_installed(profile, &version) {
+        info!("bootstrap: version already matches doing nothing");
+        return Ok(());
+    }
+
+    download_northstar_latest(profile).await?;
+
+    Ok(())
+}
+
+async fn setup_nightly(profile: &ProfileSettings) -> Result<(), Report> {
+    'version_check: {
+        // break if the profile doesn't even exist
+        if !profile.titanfall2_path.join(&profile.name).exists() {
+            break 'version_check;
+        }
+
+        let version_file_path = profile
+            .titanfall2_path
+            .join(&profile.name)
+            .join("nightly-ver");
+        let mut file = match fs::File::open(&version_file_path).await {
+            Ok(file) => file,
+            Err(err) => match fs::File::create_new(version_file_path)
+                .await
+                .wrap_err(err)
+                .wrap_err("couldn't open version file for nightly build")
+            {
+                Ok(file) => file,
+                Err(err) => {
+                    error!("{err}");
+                    error!("no updates can be done!");
+                    return Ok(());
+                }
+            },
+        };
+        let mut version = String::new();
+        _ = file.read_to_string(&mut version).await;
+
+        let latest_version = fetch_releases::fetch_latest("catornot", "northstar-nightly")
+            .await?
+            .into_iter()
+            .find(|asset| asset.name.contains("northstar-nightly"))
+            .map(|asset| asset.name)
+            .unwrap_or_default();
+        if version == latest_version {
+            info!("bootstrap: nightly version seems to be matching doing nothing");
+            return Ok(());
+        }
+
+        _ = file.write_all_buf(&mut latest_version.as_bytes()).await;
+    }
+
+    download_latest_nightly(profile).await?;
+
+    Ok(())
+}
+
+async fn setup_overlayed(profile: &ProfileSettings, check: Check) -> Result<(), Report> {
+    if check == Check::Check {
+        info!(
+            "northstar with overlay will not self bootstrap since it's not possible to tell trivially if things have changed or not"
+        );
+        return Ok(());
+    }
+
+    let launcher = profile
+        .sources
+        .iter()
+        .find_map(|source| source.as_launcher());
+    let mods = profile
+        .sources
+        .iter()
+        .find_map(|source| source.as_core_mods());
+    let discord_rpc = profile
+        .sources
+        .iter()
+        .find_map(|source| source.as_discord_rpc());
+    let (Some(launcher), Some(mods)) = (launcher, mods) else {
+        return Err(eyre!(
+            "cannot bootstrap northstar in overlay mode without launcher and mods specified"
+        ));
+    };
+
+    match (launcher, mods, discord_rpc) {
+        (
+            crate::settings::LauncherSource::FromCommit(launcher),
+            crate::settings::CoreModsSource::FromCommit(mods),
+            Some(crate::settings::DiscordRPCSource::FromCommit(discord_rpc)),
+        ) => {
+            install_northstar(
+                &get_northstar_from_revs(
+                    NorthstarInstallHashes::new(mods.clone(), launcher.clone())
+                        .with_discord_rpc(discord_rpc.clone()),
+                )
+                .await?,
+                &profile.name,
+                &profile.titanfall2_path,
+            )
+            .await?;
+        }
+        (
+            crate::settings::LauncherSource::FromCommit(launcher),
+            crate::settings::CoreModsSource::FromCommit(mods),
+            None,
+        ) => {
+            install_northstar(
+                &get_northstar_from_revs(NorthstarInstallHashes::new(
+                    mods.clone(),
+                    launcher.clone(),
+                ))
+                .await?,
+                &profile.name,
+                &profile.titanfall2_path,
+            )
+            .await?;
+        }
+        (
+            crate::settings::LauncherSource::Path(launcher),
+            crate::settings::CoreModsSource::Path(mods),
+            _,
+        ) => {
+            #[cfg(target_os = "linux")]
+            {
+                _ = fs::remove_file(
+                    profile
+                        .titanfall2_path
+                        .join(&profile.name)
+                        .join("Northstar.dll"),
+                )
+                .await;
+                _ = fs::symlink(
+                    launcher.join("build").join("game").join("Northstar.dll"),
+                    profile
+                        .titanfall2_path
+                        .join(&profile.name)
+                        .join("Northstar.dll"),
+                )
+                .await;
+                for (top, mod_path) in CORE_MODS
+                    .into_iter()
+                    .map(|path| profile.titanfall2_path.join(&profile.name).join(path))
+                    .filter_map(|path| {
+                        Some((path.components().next()?.as_os_str().to_os_string(), path))
+                    })
+                {
+                    _ = fs::remove_file(&mod_path).await;
+                    _ = fs::symlink(mods.join(top), mod_path).await;
+                }
+            }
+        }
+        _ => todo!("this overlay combo is not supported yet"),
+    }
+
+    Ok(())
+}
+
+async fn setup_ion(profile: &ProfileSettings) -> Result<(), Report> {
+    let version = match fetch_latest_version("r2ion", "Ion")
+        .await
+        .wrap_err("couldn't fetch latest ion version")
+    {
+        Err(err) => {
+            // could be because of network issue so an update isn't even possible anyway
+            error!("{err}");
+            return Ok(());
+        }
+        Ok(version) => version,
+    };
+
+    if check_if_installed(profile, &version) {
+        info!("bootstrap: version already matches doing nothing");
+        return Ok(());
+    }
+
+    download_ion_latest(profile).await?;
 
     Ok(())
 }
@@ -324,6 +351,8 @@ async fn install_northstar_release_asset(
     Ok(())
 }
 
+// TODO: fix this
+#[allow(clippy::too_many_lines)]
 pub async fn install_northstar(
     northstar_dir: &Path,
     profile: &str,
@@ -468,16 +497,16 @@ pub async fn install_northstar(
     Ok(())
 }
 
-async fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
+fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
     let profile_path = profile.titanfall2_path.join(&profile.name);
     if !profile_path.exists() {
         return false;
     }
 
-    block_in_place(|| check_mods_and_dll(version, profile_path))
+    block_in_place(|| check_mods_and_dll(version, &profile_path))
 }
 
-fn check_mods_and_dll(version: &str, profile_path: std::path::PathBuf) -> bool {
+fn check_mods_and_dll(version: &str, profile_path: &Path) -> bool {
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
     #[serde(rename_all = "PascalCase")]
     pub struct ModStub {
@@ -494,13 +523,12 @@ fn check_mods_and_dll(version: &str, profile_path: std::path::PathBuf) -> bool {
             !std::fs::read_to_string(profile_path.join(mod_path).join("mod.json"))
                 .ok()
                 .and_then(|content| serde_json::from_str(&content).ok())
-                .map(|stub: ModStub| {
+                .is_some_and(|stub: ModStub| {
                     stub.version
-                        .split(".")
-                        .zip(version.split("."))
+                        .split('.')
+                        .zip(version.split('.'))
                         .all(|(local, remote)| local == remote)
                 })
-                .unwrap_or_default()
         })
     {
         return false;
@@ -526,8 +554,8 @@ fn check_mods_and_dll(version: &str, profile_path: std::path::PathBuf) -> bool {
                     && value
                         .strip_prefix("v")
                         .unwrap_or(value)
-                        .split(".")
-                        .zip(version.split("."))
+                        .split('.')
+                        .zip(version.split('.'))
                         .all(|(local, remote)| local == remote)
                 {
                     correct_version = true;

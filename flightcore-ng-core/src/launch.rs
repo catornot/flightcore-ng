@@ -1,5 +1,7 @@
 use color_eyre::eyre::{Report, eyre};
-use std::pin::Pin;
+use std::{ffi::OsString, pin::Pin, str::FromStr, time::Duration};
+use sysinfo::System;
+use tokio::time::sleep;
 use tracing::info;
 
 use crate::{
@@ -52,7 +54,7 @@ pub async fn launch_northstar(
                     .map(|arg| arg + "  ")
                     .collect::<String>()
             ))?;
-            Box::pin(wait_for_northstar())
+            Box::pin(wait_for_northstar_to_exit())
         }
         LaunchMethod::Wine => {
             Box::pin(async move { wine_run::run_game(&exe, &launch_args, false, false).await })
@@ -70,7 +72,7 @@ pub async fn launch_northstar(
                     .map(|arg| arg + "  ")
                     .collect::<String>()
             ))?;
-            Box::pin(wait_for_northstar())
+            Box::pin(wait_for_northstar_to_exit())
         }
         LaunchMethod::Any | LaunchMethod::Direct => {
             Box::pin(async move { wine_run::run_game(&exe, &launch_args, false, false).await })
@@ -80,6 +82,20 @@ pub async fn launch_northstar(
     Ok(runner)
 }
 
-async fn wait_for_northstar() -> Result<(), Report> {
+async fn wait_for_northstar_to_exit() -> Result<(), Report> {
+    let system = System::new_all();
+
+    let northstar_launcher =
+        OsString::from_str("NorthstarLauncher.exe").expect("this should always work");
+    let titanfall = OsString::from_str("Titanfall2.exe").expect("this should always work");
+    while system
+        .processes_by_name(&northstar_launcher)
+        .next()
+        .is_some()
+        || system.processes_by_name(&titanfall).next().is_some()
+    {
+        sleep(Duration::from_secs(10)).await;
+    }
+
     Ok(())
 }

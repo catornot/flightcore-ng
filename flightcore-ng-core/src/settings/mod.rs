@@ -99,37 +99,43 @@ pub enum LaunchMethod {
 }
 
 impl Source {
-    pub fn as_launcher(&self) -> Option<&LauncherSource> {
+    #[must_use]
+    pub const fn as_launcher(&self) -> Option<&LauncherSource> {
         match self {
             Self::Launcher(inner) => Some(inner),
             _ => None,
         }
     }
-    pub fn as_core_mods(&self) -> Option<&CoreModsSource> {
+    #[must_use]
+    pub const fn as_core_mods(&self) -> Option<&CoreModsSource> {
         match self {
             Self::CoreMods(inner) => Some(inner),
             _ => None,
         }
     }
-    pub fn as_discord_rpc(&self) -> Option<&DiscordRPCSource> {
+    #[must_use]
+    pub const fn as_discord_rpc(&self) -> Option<&DiscordRPCSource> {
         match self {
             Self::DiscordRPC(inner) => Some(inner),
             _ => None,
         }
     }
-    pub fn as_mod(&self) -> Option<&ModInfo> {
+    #[must_use]
+    pub const fn as_mod(&self) -> Option<&ModInfo> {
         match self {
             Self::Mod(inner) => Some(inner),
             _ => None,
         }
     }
-    pub fn as_mod_repo(&self) -> Option<&Url> {
+    #[must_use]
+    pub const fn as_mod_repo(&self) -> Option<&Url> {
         match self {
             Self::ModRepo(inner) => Some(inner),
             _ => None,
         }
     }
-    pub fn as_package(&self) -> Option<&String> {
+    #[must_use]
+    pub const fn as_package(&self) -> Option<&String> {
         match self {
             Self::Package(inner) => Some(inner),
             _ => None,
@@ -138,7 +144,7 @@ impl Source {
 }
 
 impl FlightCoreSettings {
-    pub async fn load() -> Result<FlightCoreSettings, Report> {
+    pub async fn load() -> Result<Self, Report> {
         if !SETTINGS_PATH.exists() {
             fs::write(
                 SETTINGS_PATH.as_path(),
@@ -153,7 +159,7 @@ impl FlightCoreSettings {
             })?;
         }
 
-        Ok(FlightCoreSettings {
+        Ok(Self {
             settings: ron::from_str(
                 &fs::read_to_string(SETTINGS_PATH.as_path())
                     .await
@@ -180,38 +186,41 @@ impl FlightCoreSettings {
         if self.get_profile("R2NorthstarNightly").is_none() {
             self.settings.profiles.push(ProfileSettings {
                 name: "R2NorthstarNightly".to_string(),
-                titanfall2_path: titanfall2.clone(),
+                titanfall2_path: titanfall2,
                 flavor: NorthstarSource::Nightly,
                 ..Default::default()
             });
         }
-        // bruh who even uses rc s lol
-        // if self.get_profile("R2NorthstarRC").is_none() {}
 
         Some(())
     }
 
+    #[must_use]
     pub fn get_titanfall_path_from_profile(&self, profile: &str) -> Option<&Path> {
         self.get_profile(profile)
             .map(|profile| profile.titanfall2_path.as_path())
     }
 
+    #[must_use]
     pub fn get_default_titanfall_path(&self) -> Option<&Path> {
-        self.settings.titanfall2.first().map(|path| path.as_path())
+        self.settings.titanfall2.first().map(PathBuf::as_path)
     }
 
     pub fn add_titanfall_path(&mut self, titanfall: PathBuf) {
         self.settings.titanfall2.push(titanfall);
     }
 
+    #[must_use]
     pub fn get_profiles(&self) -> &[ProfileSettings] {
         &self.settings.profiles
     }
 
+    #[must_use]
     pub fn get_default_profile(&self) -> Option<&ProfileSettings> {
         self.settings.profiles.first()
     }
 
+    #[must_use]
     pub fn get_profile(&self, profile_name: &str) -> Option<&ProfileSettings> {
         self.settings
             .profiles

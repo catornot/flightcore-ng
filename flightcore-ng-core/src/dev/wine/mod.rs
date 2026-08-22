@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Report, eyre};
+use color_eyre::eyre::Report;
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
@@ -100,7 +100,7 @@ pub async fn run_wine_command(
     // print_and_collect_errors(child, "umu-run").await?;
     child.wait().await?;
 
-    Ok("".to_string())
+    Ok(String::new())
 }
 
 pub fn proton_dir() -> Result<PathBuf, Report> {

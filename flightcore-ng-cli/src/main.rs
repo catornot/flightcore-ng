@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic, clippy::nursery)]
+
 use clap::{Parser, Subcommand, ValueHint};
 use color_eyre::eyre::Result;
 use eyre::{Context, eyre};
@@ -88,6 +90,7 @@ enum Commands {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)] // TODO: fix this
 async fn main() -> Result<()> {
     color_eyre::install()?;
     tracing_subscriber::fmt::init();
@@ -142,6 +145,7 @@ async fn main() -> Result<()> {
         | Commands::Open { profile: _ } => "R2Northstar",
     };
 
+    #[allow(clippy::map_unwrap_or)] // required because of aliasing
     let titanfall_path = settings
         .get_titanfall_path_from_profile(profile)
         .or_else(|| settings.get_default_titanfall_path())
@@ -176,15 +180,15 @@ async fn main() -> Result<()> {
             }
 
             let profile = profile.as_deref().unwrap_or("R2NorthstarDev");
-            let profile = match settings.get_profile_mut(profile) {
-                Some(profile) => profile,
-                None => {
-                    let profile = settings
-                        .add_profile(profile, Some(titanfall_path))
-                        .expect("this invariant should have been upheld");
-                    profile.flavor = NorthstarSource::Overlayed; // set overlay-ed for new profiles
-                    profile
-                }
+            #[allow(clippy::option_if_let_else)] // required because of aliasing
+            let profile = if let Some(profile) = settings.get_profile_mut(profile) {
+                profile
+            } else {
+                let profile = settings
+                    .add_profile(profile, Some(titanfall_path))
+                    .expect("this invariant should have been upheld");
+                profile.flavor = NorthstarSource::Overlayed; // set overlay-ed for new profiles
+                profile
             };
 
             if !matches!(profile.flavor, NorthstarSource::Overlayed) && !force {
@@ -311,13 +315,15 @@ fn ask_titanfall_path(settings: &mut FlightCoreSettings) -> PathBuf {
 
     let selection = inquire::Select::new(
         "Select a titanfall 2 path",
-        path.map(|path| vec![path.display().to_string(), "manual".to_string()])
-            .unwrap_or_else(|| vec!["manual".to_string()]),
+        path.map_or_else(
+            || vec!["manual".to_string()],
+            |path| vec![path.display().to_string(), "manual".to_string()],
+        ),
     )
     .with_page_size(5)
     .prompt();
 
-    let titanfall = match selection.as_ref().map(|s| s.as_str()) {
+    let titanfall = match selection.as_ref().map(String::as_str) {
         Err(_) | Ok("manual") => inquire::Text::new("Manually enter the path")
             .with_validator(|path: &str| {
                 let validation_path = PathBuf::from(path).join("Titanfall2.exe");

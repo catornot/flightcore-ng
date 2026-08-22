@@ -1,3 +1,6 @@
+#![warn(clippy::pedantic, clippy::nursery)]
+#![allow(missing_docs, clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 use color_eyre::eyre::{Context, Report, eyre};
 use futures_lite::StreamExt;
 use std::path::{Path, PathBuf};
@@ -8,7 +11,7 @@ pub mod launch;
 pub mod settings;
 pub mod setup;
 
-pub const TITANFALL_ID: u32 = 1237970;
+pub const TITANFALL_ID: u32 = 1_237_970;
 
 pub fn local_dir() -> Result<PathBuf, color_eyre::Report> {
     let dirs = directories::ProjectDirs::from("org", "flightcore", "flightcore-ng");

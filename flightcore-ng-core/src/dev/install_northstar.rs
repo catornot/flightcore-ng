@@ -12,38 +12,47 @@ use tracing::info;
 
 use crate::{dev::fetch_revs::fetch_latest, tmp_dir};
 
-pub struct NorthstarInstallInfo {
-    mods_sha: String,
-    launcher_sha: String,
-    rpc_sha: Option<String>,
+const EXPERIEMENTAL_FLAGS: [&str; 4] = [
+    "--extra-experimental-features",
+    "nix-command",
+    "--extra-experimental-features",
+    "flakes",
+];
+
+pub struct NorthstarInstallHashes {
+    mods: String,
+    launcher: String,
+    rpc: Option<String>,
 }
 
-impl NorthstarInstallInfo {
-    pub fn new(mods: String, launcher: String) -> Self {
+impl NorthstarInstallHashes {
+    #[must_use]
+    pub const fn new(mods: String, launcher: String) -> Self {
         Self {
-            mods_sha: mods,
-            launcher_sha: launcher,
-            rpc_sha: None,
+            mods,
+            launcher,
+            rpc: None,
         }
     }
 
     pub async fn try_from_url(mods: Url, launcher: Url) -> Result<Self, Report> {
         Ok(Self {
-            mods_sha: fetch_latest(mods).await?,
-            launcher_sha: fetch_latest(launcher).await?,
-            rpc_sha: None,
+            mods: fetch_latest(mods).await?,
+            launcher: fetch_latest(launcher).await?,
+            rpc: None,
         })
     }
 
+    #[must_use]
     pub fn with_discord_rpc(self, rpc: String) -> Self {
         Self {
-            rpc_sha: Some(rpc),
+            rpc: Some(rpc),
             ..self
         }
     }
 }
 
-pub async fn get_northstar_from_revs(install: NorthstarInstallInfo) -> Result<PathBuf, Report> {
+pub async fn get_northstar_from_revs(install: NorthstarInstallHashes) -> Result<PathBuf, Report> {
     if Command::new("nix").arg("--version").output().await.is_err() {
         return Err(eyre!(
             "nix package manager not installed : https://nixos.org/download"
@@ -55,13 +64,13 @@ pub async fn get_northstar_from_revs(install: NorthstarInstallInfo) -> Result<Pa
     }
 
     let launcher = get_repo_uri(
-        install.launcher_sha,
+        install.launcher,
         "https://github.com/R2Northstar/NorthstarLauncher.git",
     )?;
-    let mods = get_github_uri(install.mods_sha, "R2Northstar", "NorthstarMods");
+    let mods = get_github_uri(&install.mods, "R2Northstar", "NorthstarMods");
     let rpc = install
-        .rpc_sha
-        .map(|sha| get_github_uri(sha, "R2Northstar", "NorthstarMods"));
+        .rpc
+        .map(|sha| get_github_uri(&sha, "R2Northstar", "NorthstarMods"));
 
     let urls = [("mods", mods.as_str()), ("launcher", launcher.as_str())];
     let inputs = urls
@@ -69,13 +78,6 @@ pub async fn get_northstar_from_revs(install: NorthstarInstallInfo) -> Result<Pa
         .chain(rpc.iter().map(|url| ("discordrpc", url.as_str())))
         .flat_map(|(input, uri)| ["--override-input", input, uri])
         .collect::<Vec<_>>();
-
-    const EXPERIEMENTAL_FLAGS: [&str; 4] = [
-        "--extra-experimental-features",
-        "nix-command",
-        "--extra-experimental-features",
-        "flakes",
-    ];
 
     fs::create_dir_all(tmp_dir()?).await?;
     let out_link = tmp_dir()?.join("northstar-dev");
@@ -173,7 +175,7 @@ fn get_repo_uri(sha: String, repo: &'static str) -> Result<Url, Report> {
     .to_uri())
 }
 
-fn get_github_uri(sha: String, owner: &'static str, repo: &'static str) -> String {
+fn get_github_uri(sha: &str, owner: &'static str, repo: &'static str) -> String {
     format!("github:{owner}/{repo}/{sha}")
 }
 

@@ -21,13 +21,11 @@ pub fn is_wine_installed() -> bool {
     proton_dir()
         .as_ref()
         .map(PathBuf::as_path)
-        .map(Path::exists)
-        .unwrap_or_default()
+        .is_ok_and(Path::exists)
         && wine_dir()
             .as_ref()
             .map(PathBuf::as_path)
-            .map(Path::exists)
-            .unwrap_or_default()
+            .is_ok_and(Path::exists)
 }
 
 pub async fn install_wine() -> Result<(), Report> {
@@ -53,8 +51,7 @@ pub async fn install_wine() -> Result<(), Report> {
                 proton
                     .name
                     .split_once('.')
-                    .map(|(left, _)| left)
-                    .unwrap_or(&proton.name),
+                    .map_or(proton.name.as_str(), |(left, _)| left),
             )
             .with_extension("");
 

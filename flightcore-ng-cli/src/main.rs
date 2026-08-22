@@ -307,18 +307,33 @@ async fn main() -> Result<()> {
 }
 
 fn ask_titanfall_path(settings: &mut FlightCoreSettings) -> PathBuf {
-    let path = SteamDir::locate().ok().and_then(|steam_dir| {
+    let steam_path = SteamDir::locate().ok().and_then(|steam_dir| {
         let (app, library) = steam_dir.find_app(TITANFALL_ID).ok()??;
 
         Some(library.resolve_app_dir(&app))
     });
 
+    // bad impl but still
+    let possible_paths: &[&str] = if cfg!(target_os = "windows") {
+        &["C:\\EA Games\\Titanfall 2"]
+    } else {
+        &[
+            "~/Games/ea-app/Titantall2",
+            "~/Games/ea-app/drive_c/Program Files/EA Games/Titanfall 2/",
+        ]
+    };
+    let real_paths = possible_paths
+        .iter()
+        .filter(|path| PathBuf::from(path).join("Titanfall2.exe").exists())
+        .map(ToOwned::to_owned)
+        .map(ToOwned::to_owned);
+
     let selection = inquire::Select::new(
         "Select a titanfall 2 path",
-        path.map_or_else(
-            || vec!["manual".to_string()],
-            |path| vec![path.display().to_string(), "manual".to_string()],
-        ),
+        std::iter::once("manual".to_string())
+            .chain(steam_path.map(|path| path.display().to_string()))
+            .chain(real_paths)
+            .collect(),
     )
     .with_page_size(5)
     .prompt();

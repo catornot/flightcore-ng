@@ -15,10 +15,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   src = ../.;
 
-  rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml;
-
   nativeBuildInputs = [
-    finalAttrs.rustToolchain
     pkg-config
     makeWrapper
   ];

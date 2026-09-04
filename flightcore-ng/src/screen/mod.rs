@@ -7,7 +7,7 @@ use iced::{
     widget::{column, container, space},
 };
 use iced_aw::{TabLabel, widgets::TabBar};
-use tokio::sync::RwLock;
+use tokio::sync::{OwnedRwLockWriteGuard, RwLock};
 
 use crate::{
     Message,
@@ -57,7 +57,7 @@ impl Screens {
                 .map(|screen| screen.label())
                 .enumerate()
                 .collect(),
-            |tab_id| Message::Screens(ScreensMessage::SwitchActiveScren(tab_id)),
+            |tab_id| Message::Screens(ScreensMessage::SwitchActiveScreen(tab_id)),
         )
         .tab_width(Length::Shrink)
         .style(|theme, status| iced_aw::tab_bar::Style {
@@ -77,9 +77,21 @@ impl Screens {
 
     pub fn update(&mut self, message: ScreensMessage) -> Task<Message> {
         match message {
-            ScreensMessage::SwitchActiveScren(index) => {
-                if index < self.screens.len() {
+            ScreensMessage::SwitchActiveScreen(index) => {
+                if index < self.screens.len() && index != self.active {
+                    let maybe_task =
+                        self.screens[self.active].update(&mut ScreensMessage::SwitchedFrom);
                     self.active = index;
+                    self.screens[index]
+                        .update(&mut ScreensMessage::SwitchedTo)
+                        .map_or_else(Task::none, |task| {
+                            if let Some(inner) = maybe_task {
+                                inner.chain(task)
+                            } else {
+                                task
+                            }
+                        })
+                } else if index == self.active {
                     Task::none()
                 } else {
                     Task::done(Message::Error(format!("Couldn't switch to screen {index}")))
@@ -96,7 +108,9 @@ impl Screens {
 
 #[derive(Debug, Clone)]
 pub enum ScreensMessage {
-    SwitchActiveScren(usize),
+    SwitchActiveScreen(usize),
+    SwitchedTo,
+    SwitchedFrom,
     SwitchProfile(String),
     LaunchGame {
         profile: String,
@@ -108,6 +122,7 @@ pub enum ScreensMessage {
     },
     Startup,
     NewNorthstarVersion(Option<String>),
+    AcquiredLock(Option<Arc<OwnedRwLockWriteGuard<FlightCoreSettings>>>),
 }
 
 pub trait Screen: std::fmt::Debug {

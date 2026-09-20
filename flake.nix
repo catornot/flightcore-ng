@@ -41,7 +41,9 @@
               mingw-expat
               mingw-gmp
               mingw-mpfr
-mingw-filesystem       mingw-crt       ;
+              mingw-filesystem
+              mingw-crt
+              ;
           };
           mingw-libgcc = pkgs.callPackage ./nix/mingw-libgcc.nix { };
           mingw-stdlibcpp = pkgs.callPackage ./nix/mingw-libstdcpp.nix {
@@ -50,8 +52,8 @@ mingw-filesystem       mingw-crt       ;
           mingw-expat = pkgs.callPackage ./nix/mingw-expat.nix { };
           mingw-gmp = pkgs.callPackage ./nix/mingw-gmp.nix { };
           mingw-mpfr = pkgs.callPackage ./nix/mingw-mpfr.nix { };
-          mingw-filesystem= pkgs.callPackage ./nix/mingw-filesystem.nix { };
-          mingw-crt= pkgs.callPackage ./nix/mingw-crt.nix { };
+          mingw-filesystem = pkgs.callPackage ./nix/mingw-filesystem.nix { };
+          mingw-crt = pkgs.callPackage ./nix/mingw-crt.nix { };
 
           default = self.packages.${system}.gui;
         };

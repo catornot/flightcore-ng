@@ -42,7 +42,15 @@ pub async fn install_wine() -> Result<(), Report> {
         let proton = fetch_releases::fetch_latest("GloriousEggroll", "proton-ge-custom")
             .await?
             .into_iter()
-            .find(|proton| proton.name.starts_with("GE-Proton") && proton.name.ends_with(".tar.gz"))
+            .find(|proton| {
+                proton.name.starts_with("GE-Proton")
+                    && proton.name.ends_with(".tar.gz")
+                    && proton.name.contains(if cfg!(target_arch = "x86_64") {
+                        "x86_64"
+                    } else {
+                        "aarch64"
+                    })
+            })
             .ok_or_else(|| eyre!("couldn't find proton in the latest release"))?;
 
         info!("downloading proton {}", proton.name);

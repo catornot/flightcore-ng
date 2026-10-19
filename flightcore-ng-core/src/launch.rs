@@ -46,9 +46,8 @@ pub async fn launch_northstar(
     let runner: Pin<Box<dyn Future<Output = Result<(), Report>> + Send>> = match launch {
         LaunchMethod::Steam => {
             open::that_detached(format!(
-                "steam://run/{}//-profile={} --northstar {}/",
+                "steam://run/{}/ --northstar {}/",
                 TITANFALL_ID,
-                profile.name,
                 launch_args
                     .into_iter()
                     .map(|arg| arg + "  ")

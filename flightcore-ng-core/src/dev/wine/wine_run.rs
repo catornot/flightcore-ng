@@ -18,13 +18,7 @@ pub async fn run_game(
     debug: bool,
 ) -> Result<(), Report> {
     if !is_wine_installed() {
-        info!("installing wine prefix");
-
-        // todo add progress bar
-        if let Err(err) = install_wine().await {
-            _ = remove_wine().await;
-            return Err(err);
-        }
+        return Err(eyre!("wine isn't installed! internal error please error"));
     }
 
     info!("launching game at {} with {:?}", exe.display(), launch_args);

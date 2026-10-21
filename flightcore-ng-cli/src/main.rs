@@ -5,14 +5,18 @@ use color_eyre::eyre::Result;
 use eyre::{Context, eyre};
 use flightcore_ng_core::{
     TITANFALL_ID, create_backup,
-    dev::{fetch_revs::fetch_latest, wine::wine_run},
+    dev::{
+        fetch_revs::fetch_latest,
+        wine::wine_install::{install_wine, is_wine_installed, remove_wine, wine_run},
+    },
     launch::launch_northstar,
     settings::{
         CoreModsSource, DiscordRPCSource, FlightCoreSettings, LauncherSource, NorthstarSource,
         SETTINGS_PATH, Source,
     },
-    setup::northstar::bootstrap_northstar,
+    setup::{northstar::bootstrap_northstar, sources::Store},
 };
+use indicatif::ProgressStyle;
 use inquire::validator::{ErrorMessage, Validation};
 use std::path::PathBuf;
 use steamlocate::SteamDir;
@@ -145,6 +149,8 @@ async fn main() -> Result<()> {
         | Commands::Open { profile: _ } => "R2Northstar",
     };
 
+    let store = Store::try_new(settings.clone())?;
+
     #[allow(clippy::map_unwrap_or)] // required because of aliasing
     let titanfall_path = settings
         .get_titanfall_path_from_profile(profile)
@@ -192,7 +198,7 @@ async fn main() -> Result<()> {
             };
 
             if !matches!(profile.flavor, NorthstarSource::Overlayed) && !force {
-                error!("this is profile isn't setup for commit based installations!");
+                error!("this profile isn't setup for commit based installations!");
                 error!("you can override that by using --force!");
                 return Err(eyre!("{} isn't built for this", profile.name));
             }
@@ -201,7 +207,9 @@ async fn main() -> Result<()> {
             // remove all sources related to northstar installs
             profile.sources.retain(|source| match source {
                 Source::DiscordRPC(_) | Source::Launcher(_) | Source::CoreMods(_) => false,
-                Source::Mod(_) | Source::ModRepo(_) | Source::Package(_) => true,
+                Source::Mod(_) | Source::ModRepo(_) | Source::LocalRepo(_) | Source::Package(_) => {
+                    true
+                }
             });
 
             profile.sources.extend_from_slice(&[
@@ -262,20 +270,37 @@ async fn main() -> Result<()> {
                 passthrough.push(format!("-profile={profile}"));
             }
 
-            let profile = settings
-                .get_profile(profile.as_deref().unwrap_or("R2NorthstarStable"))
-                .unwrap();
+            if !is_wine_installed() {
+                info!("installing wine prefix");
 
-            passthrough.extend(profile.launch_args.clone());
-            if !profile.ignore_global_launch_args {
-                passthrough.extend(settings.settings.launch_args.clone());
+                let progress_bar = indicatif::ProgressBar::new(100)
+                    .with_style(ProgressStyle::default_spinner())
+                    .with_message("proton install");
+
+                progress_bar.set_style(
+                    ProgressStyle::with_template(
+                        "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>3}/{len:3}% {msg}",
+                    )
+                    .unwrap()
+                    .progress_chars("##-"),
+                );
+
+                if let Err(err) = install_wine(Some(|percentage| {
+                    progress_bar.set_position((percentage * 100.) as u64)
+                }))
+                .await
+                {
+                    _ = remove_wine().await;
+                    return Err(err);
+                }
+
+                progress_bar.finish_with_message("proton installed")
             }
 
-            wine_run::run_game(
-                &profile.titanfall2_path.join("NorthstarLauncher.exe"),
-                &passthrough,
-                false,
-                true,
+            launch_northstar(
+                &settings,
+                profile.as_deref().unwrap_or("R2NorthstarStable"),
+                passthrough,
             )
             .await?;
         }

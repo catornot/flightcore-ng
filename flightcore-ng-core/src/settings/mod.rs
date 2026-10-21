@@ -1,60 +1,24 @@
-use color_eyre::eyre::{Report, WrapErr};
-use eyre::eyre;
-use reqwest::Url;
-use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
-use std::{
-    path::{Path, PathBuf},
-    sync::LazyLock,
-};
-use tokio::fs;
+use std::path::PathBuf;
 
-use crate::local_dir;
-
-pub static SETTINGS_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
-    local_dir()
-        .expect("local dir should not be failing")
-        .join("settings.ron")
-});
-pub static PREATTY_CONFIG: LazyLock<PrettyConfig> = LazyLock::new(PrettyConfig::new);
-
-#[derive(Debug, Clone)]
-pub struct FlightCoreSettings {
-    pub settings: Settings,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct Settings {
-    pub titanfall2: Vec<PathBuf>,
-    profiles: Vec<ProfileSettings>,
-    pub sources: Vec<Source>,
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Config {
+    pub titanfall2: PathBuf,
+    pub profiles: Vec<ProfileConfig>,
     pub launch_args: Vec<String>,
     pub preferred_launch: LaunchMethod,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileSettings {
+pub struct ProfileConfig {
     pub name: String,
     pub titanfall2_path: PathBuf,
     pub flavor: NorthstarSource,
-    pub sources: Vec<Source>,
+    pub sources: Vec<String>,
     pub launch_args: Vec<String>,
     pub ignore_global_launch_args: bool,
     pub launch_method: LaunchMethod,
 }
-
-#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
-pub enum Source {
-    Launcher(LauncherSource),
-    CoreMods(CoreModsSource),
-    DiscordRPC(DiscordRPCSource),
-    Mod(ModInfo),
-    ModRepo(Url),
-    Package(String),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default, Hash)]
-pub struct ModInfo {}
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, Hash)]
 pub enum NorthstarSource {
@@ -64,27 +28,6 @@ pub enum NorthstarSource {
     Nightly,
     Ion,
     Overlayed,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
-pub enum LauncherSource {
-    FromCommit(String),
-    Version(semver::Version),
-    Path(PathBuf),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
-pub enum CoreModsSource {
-    FromCommit(String),
-    Version(semver::Version),
-    Path(PathBuf),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Hash)]
-pub enum DiscordRPCSource {
-    FromCommit(String),
-    Version(semver::Version),
-    Path(PathBuf),
 }
 
 #[derive(

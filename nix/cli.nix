@@ -6,9 +6,10 @@
   pkg-config,
   umu-launcher,
   zenity,
+  libgit2,
 }:
 let
-  cargoLock = (import ./cargo_lock.nix { });
+  cargoLock = (import ./cargo_lock.nix { inherit lib; });
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   name = "flightcore-ng-cli";
@@ -18,6 +19,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
   nativeBuildInputs = [
     pkg-config
     makeWrapper
+  ];
+
+  buildInputs = [
+    libgit2
   ];
 
   cargoBuildFlags = [

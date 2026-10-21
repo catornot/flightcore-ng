@@ -25,3 +25,4 @@ flightcore-ng-core = { workspace = true }
 clap = { version = "4.6.0", features = ["derive"] }
 clap_complete = "4.6.0"
 inquire = { version = "0.9.4", features = ["editor"] }
+indicatif = { version = "0.18.4", default-features = false, features = ["improved_unicode", "unicode-width"] }

@@ -33,7 +33,7 @@ pub async fn fetch_version(owner: &str, repo: &str, version: &str) -> Result<Vec
 
 pub async fn fetch_asset(
     asset: Asset,
-    mut download_progress: Option<impl FnMut(f32)>,
+    mut download_progress: Option<impl FnMut(f64)>,
 ) -> Result<Bytes, Report> {
     let mut response = reqwest::ClientBuilder::new()
         .build()?
@@ -53,12 +53,14 @@ pub async fn fetch_asset(
             download_progress(
                 length_maybe
                     .and_then(|total| Some((total, remaining.as_mut()?)))
-                    .map(|(total, remaining)| {
-                        let progress = 1. - *remaining as f32 / total as f32;
-                        *remaining -= chunk.len() as u64;
-                        progress
-                    })
-                    .unwrap_or_else(|| enumerator.next().unwrap() as f32),
+                    .map_or_else(
+                        || enumerator.next().unwrap() as f64,
+                        |(total, remaining)| {
+                            let progress = 1. - *remaining as f64 / total as f64;
+                            *remaining -= chunk.len() as u64;
+                            progress
+                        },
+                    ),
             );
         }
     }

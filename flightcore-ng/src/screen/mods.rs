@@ -1,4 +1,4 @@
-use flightcore_ng_core::settings::FlightCoreSettings;
+use flightcore_ng_core::setup::sources::Store;
 use iced::{Element, Task, widget::text};
 use iced_aw::TabLabel;
 use std::sync::Arc;
@@ -11,12 +11,12 @@ use crate::{
 
 #[derive(Debug)]
 pub struct ModsScreen {
-    settings: Arc<RwLock<FlightCoreSettings>>,
+    store: Arc<RwLock<Store>>,
 }
 
 impl ModsScreen {
-    pub const fn new(settings: Arc<RwLock<FlightCoreSettings>>) -> Self {
-        Self { settings }
+    pub const fn new(store: Arc<RwLock<Store>>) -> Self {
+        Self { store }
     }
 }
 

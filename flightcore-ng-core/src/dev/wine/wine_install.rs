@@ -30,7 +30,7 @@ pub fn is_wine_installed() -> bool {
 }
 
 pub async fn install_wine(
-    mut install_progress_reporter: Option<impl FnMut(f32)>,
+    mut install_progress_reporter: Option<impl FnMut(f64)>,
 ) -> Result<(), Report> {
     // install proton if it's not installed already
     if !proton_dir()
@@ -59,7 +59,7 @@ pub async fn install_wine(
 }
 
 async fn install_proton(
-    mut install_progress_reporter: Option<impl FnMut(f32)>,
+    mut install_progress_reporter: Option<impl FnMut(f64)>,
 ) -> Result<(), Report> {
     if let Some(proton) = env::var("PROTON_PATH").ok().map(PathBuf::from) {
         fs::create_dir_all(proton_dir()?)
@@ -94,7 +94,7 @@ async fn install_proton(
             }
 
             if let Some(install_progress_reporter) = install_progress_reporter.as_mut() {
-                install_progress_reporter(total_paths as f32 / current_index as f32)
+                install_progress_reporter(total_paths as f64 / current_index as f64)
             }
         }
 

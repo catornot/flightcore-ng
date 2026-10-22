@@ -3,6 +3,7 @@ use eyre::ContextCompat;
 use snix_eval::{EvalIO, EvalMode, FileType, NixAttrs};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 use tracing::info;
@@ -18,11 +19,23 @@ mod northstar;
 mod packages;
 mod repos;
 
-const EVAL_CODE: &str = r#"
+const EVAL_PROFILES: &str = r"
 {
-    config = (import ./config.nix {}) // (import ./generated-config.nix {});
+    config = let
+    generated = import ./generated-config.nix;  
+    final = (import ./config.nix final generated)
+    in final
 }
-"#;
+";
+
+const EVAL_SRC: &str = r"
+{
+    config = let
+    generated = import ./generated-config.nix;  // ;
+    final = (import ./config.nix final final generated)
+    in final
+}
+";
 
 #[derive(Debug, Clone)]
 pub enum Source {
@@ -33,6 +46,7 @@ pub enum Source {
     LockedSource(()),
 }
 
+#[derive(Debug, Clone)]
 pub struct Store {
     store_path: PathBuf,
     eval_path: PathBuf,
@@ -59,25 +73,36 @@ pub trait SourceImpl {
 }
 
 impl Store {
+    #[must_use]
     pub fn new() -> Self {
         let eval_path = local_dir().expect("bruh how");
         let store_path = eval_path.join("store");
         _ = std::fs::create_dir_all(&store_path);
 
-        let store = Self {
+        Self {
             store_path,
             eval_path,
             sources: Vec::new(),
-            config: Default::default(),
-        };
-
-        store
+            config: Config::default(),
+        }
     }
 
+    #[must_use]
     pub(super) fn store_path(&self) -> &Path {
         &self.store_path
     }
 
+    #[must_use]
+    pub fn get_default_profile(&self) -> Option<&ProfileConfig> {
+        self.config.profiles.first()
+    }
+
+    #[must_use]
+    pub fn get_profiles(&self) -> &[ProfileConfig] {
+        &self.config.profiles
+    }
+
+    #[must_use]
     pub fn get_profile(&self, profile_name: &str) -> Option<&ProfileConfig> {
         self.config
             .profiles
@@ -85,15 +110,31 @@ impl Store {
             .find(|profile| profile.name == profile_name)
     }
 
+    #[must_use]
+    pub fn get_profile_mut(&mut self, profile_name: &str) -> Option<&mut ProfileConfig> {
+        self.config
+            .profiles
+            .iter_mut()
+            .find(|profile| profile.name == profile_name)
+    }
+
+    #[must_use]
+    pub fn add_profile(&mut self, profile_name: &str) -> Option<&mut ProfileConfig> {
+        self.config
+            .profiles
+            .iter_mut()
+            .find(|profile| profile.name == profile_name)
+    }
+
+    #[must_use]
     pub fn get_source(&self, name: &str) -> Option<&Source> {
         self.sources
             .iter()
             .find_map(|(src_name, src)| src_name.eq(name).then_some(src))
     }
 
-    pub fn evaluate_config(&self) -> Result<(), Report> {
-        _ = fs::File::create_new(self.eval_path.join("config.nix"));
-        _ = fs::File::create_new(self.eval_path.join("generated-config.nix"));
+    pub fn evaluate_config(&mut self) -> Result<(), Report> {
+        try_default_config(self);
 
         let result = snix_eval::EvaluationBuilder::new(Box::new(FlightCoreEvalIO {
             store_path: self.store_path.clone(),
@@ -105,11 +146,10 @@ impl Store {
         .evaluate(EVAL_CODE, Some(self.eval_path.clone()));
 
         if let Some(err) = result.errors.iter().fold(None::<Report>, |acc, err| {
-            if let Some(acc) = acc {
-                Some(acc.wrap_err(eyre!(err.fancy_format_str())))
-            } else {
-                Some(eyre!(err.fancy_format_str()))
-            }
+            acc.map_or_else(
+                || Some(eyre!(err.fancy_format_str())),
+                |acc| Some(acc.wrap_err(eyre!(err.fancy_format_str()))),
+            )
         }) {
             return Err(err);
         }
@@ -136,7 +176,15 @@ impl Store {
             value.type_of()
         );
 
+        self.config = evaluate_config(&config)?;
+
         Ok(())
+    }
+}
+
+impl Default for Store {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -144,8 +192,7 @@ impl EvalIO for FlightCoreEvalIO {
     fn path_exists(&self, path: &Path) -> std::io::Result<bool> {
         Ok(path
             .parent()
-            .map(|parent| self.store_path == parent || self.eval_path == parent)
-            .unwrap_or_default()
+            .is_some_and(|parent| self.store_path == parent || self.eval_path == parent)
             && path.exists())
     }
 
@@ -208,7 +255,7 @@ fn evaluate_profiles(
         return Ok(Vec::new());
     };
     let profiles = profiles
-        .wrap_err_with(|| eyre!("profiles aren't isn't a list"))?
+        .wrap_err_with(|| eyre!("profiles aren't a list"))?
         .into_inner();
     let profiles = profiles
         .iter()
@@ -216,8 +263,7 @@ fn evaluate_profiles(
         .collect::<Result<Vec<_>, _>>()
         .wrap_err_with(|| eyre!("profiles isn't a list of attrs"))?;
     profiles
-        .iter()
-        .count()
+        .len()
         .eq(&0)
         .then_some(())
         .ok_or_else(|| eyre!("empty profiles"))?;
@@ -241,6 +287,7 @@ fn evaluate_profiles(
                 .unwrap_or_default(),
             launch_method: evaluate_launch_method(&profile),
             name,
+            source: todo!(),
         });
     }
 
@@ -370,3 +417,12 @@ fn evaluate_launch_args(
 
 //     Ok(source)
 // }
+
+fn try_default_config(store: &Store) {
+    if let Ok(mut file) = fs::File::create_new(store.eval_path.join("config.nix")) {
+        file.write_all(b"final: prev: {}");
+    }
+    if let Ok(mut file) = fs::File::create_new(store.eval_path.join("generated-config.nix")) {
+        file.write_all(b"{}");
+    }
+}

@@ -1,5 +1,6 @@
 use flightcore_ng_core::{
-    launch::launch_northstar, settings::FlightCoreSettings, setup::northstar::CORE_MODS,
+    launch::launch_northstar,
+    setup::{northstar::CORE_MODS, sources::Store},
 };
 use iced::{
     Element, Length, Padding, Task,
@@ -17,7 +18,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct LaunchScreen {
-    settings: Arc<RwLock<FlightCoreSettings>>,
+    store: Arc<RwLock<Store>>,
     profile: Option<String>,
     tip: String,
     launch_args: String,
@@ -30,10 +31,10 @@ pub struct LaunchScreen {
 }
 
 impl LaunchScreen {
-    pub fn new(settings: Arc<RwLock<FlightCoreSettings>>) -> Self {
+    pub fn new(store: Arc<RwLock<Store>>) -> Self {
         Self {
-            profile: settings.try_read().ok().and_then(|settings| {
-                settings
+            profile: store.try_read().ok().and_then(|store| {
+                store
                     .get_default_profile()
                     .map(|profile| profile.name.clone())
             }),
@@ -42,7 +43,7 @@ impl LaunchScreen {
             is_running: false,
             version: None,
             profile_combos: combo_box::State::new(
-                settings
+                store
                     .try_read()
                     .ok()
                     .map(|settings| {
@@ -57,7 +58,7 @@ impl LaunchScreen {
             servers: 0,
             players: 0,
             did_startup: false,
-            settings,
+            store,
         }
     }
 }
@@ -116,10 +117,10 @@ impl Screen for LaunchScreen {
     fn update(&mut self, message: &mut ScreensMessage) -> Option<Task<Message>> {
         Some(match message {
             ScreensMessage::LaunchGame { profile } => {
-                if let Ok(_lock) = self.settings.try_read() {
+                if let Ok(_lock) = self.store.try_read() {
                     self.is_running = true;
                     Task::future(launch_northstar_thunk(
-                        Arc::clone(&self.settings),
+                        Arc::clone(&self.store),
                         profile.clone(),
                         self.launch_args
                             .split_whitespace()
@@ -170,7 +171,7 @@ impl Screen for LaunchScreen {
                 };
 
                 Task::future(get_northstar_version(
-                    Arc::clone(&self.settings),
+                    Arc::clone(&self.store),
                     profile.to_owned(),
                 ))
             }
@@ -193,7 +194,7 @@ impl Screen for LaunchScreen {
 }
 
 async fn launch_northstar_thunk(
-    settings: Arc<RwLock<FlightCoreSettings>>,
+    settings: Arc<RwLock<Store>>,
     profile: String,
     launch_args: Vec<String>,
 ) -> Message {
@@ -217,10 +218,7 @@ async fn launch_northstar_thunk(
     }
 }
 
-async fn get_northstar_version(
-    settings: Arc<RwLock<FlightCoreSettings>>,
-    profile: String,
-) -> Message {
+async fn get_northstar_version(settings: Arc<RwLock<Store>>, profile: String) -> Message {
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
     #[serde(rename_all = "PascalCase")]
     pub struct ModStub {

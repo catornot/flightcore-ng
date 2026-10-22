@@ -1,7 +1,8 @@
+use color_eyre::eyre::{Report, eyre};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     pub titanfall2: PathBuf,
     pub profiles: Vec<ProfileConfig>,
@@ -9,7 +10,7 @@ pub struct Config {
     pub preferred_launch: LaunchMethod,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ProfileConfig {
     pub name: String,
     pub titanfall2_path: PathBuf,
@@ -18,6 +19,14 @@ pub struct ProfileConfig {
     pub launch_args: Vec<String>,
     pub ignore_global_launch_args: bool,
     pub launch_method: LaunchMethod,
+    pub source: ProfileConfigSource,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum ProfileConfigSource {
+    User,
+    #[default]
+    Flightcoreng,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, Hash)]
@@ -41,95 +50,19 @@ pub enum LaunchMethod {
     Direct,
 }
 
-impl Source {
-    #[must_use]
-    pub const fn as_launcher(&self) -> Option<&LauncherSource> {
-        match self {
-            Self::Launcher(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    #[must_use]
-    pub const fn as_core_mods(&self) -> Option<&CoreModsSource> {
-        match self {
-            Self::CoreMods(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    #[must_use]
-    pub const fn as_discord_rpc(&self) -> Option<&DiscordRPCSource> {
-        match self {
-            Self::DiscordRPC(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    #[must_use]
-    pub const fn as_mod(&self) -> Option<&ModInfo> {
-        match self {
-            Self::Mod(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    #[must_use]
-    pub const fn as_mod_repo(&self) -> Option<&Url> {
-        match self {
-            Self::ModRepo(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    #[must_use]
-    pub const fn as_package(&self) -> Option<&String> {
-        match self {
-            Self::Package(inner) => Some(inner),
-            _ => None,
-        }
-    }
-}
-
-impl FlightCoreSettings {
-    pub async fn load() -> Result<Self, Report> {
-        if !SETTINGS_PATH.exists() {
-            fs::write(
-                SETTINGS_PATH.as_path(),
-                &ron::to_string(&Settings::default())?,
-            )
-            .await
-            .wrap_err_with(|| {
-                eyre!(
-                    "couldn't create the settings file : {}",
-                    SETTINGS_PATH.display()
-                )
-            })?;
-        }
-
-        Ok(Self {
-            settings: ron::from_str(
-                &fs::read_to_string(SETTINGS_PATH.as_path())
-                    .await
-                    .wrap_err_with(|| {
-                        eyre!(
-                            "couldn't read the settings file : {}",
-                            SETTINGS_PATH.display()
-                        )
-                    })?,
-            )?,
-        })
-    }
-
+impl Config {
     pub fn add_default_profiles(&mut self) -> Option<()> {
-        let titanfall2 = self.get_default_titanfall_path()?.to_owned();
+        let titanfall2 = self.get_titanfall_path();
         if self.get_profile("R2NorthstarStable").is_none() {
-            self.settings.profiles.push(ProfileSettings {
+            self.profiles.push(ProfileConfig {
                 name: "R2NorthstarStable".to_string(),
-                titanfall2_path: titanfall2.clone(),
                 flavor: NorthstarSource::Stable,
                 ..Default::default()
             });
         }
         if self.get_profile("R2NorthstarNightly").is_none() {
-            self.settings.profiles.push(ProfileSettings {
+            self.profiles.push(ProfileConfig {
                 name: "R2NorthstarNightly".to_string(),
-                titanfall2_path: titanfall2,
                 flavor: NorthstarSource::Nightly,
                 ..Default::default()
             });
@@ -139,41 +72,33 @@ impl FlightCoreSettings {
     }
 
     #[must_use]
-    pub fn get_titanfall_path_from_profile(&self, profile: &str) -> Option<&Path> {
-        self.get_profile(profile)
-            .map(|profile| profile.titanfall2_path.as_path())
-    }
-
-    #[must_use]
-    pub fn get_default_titanfall_path(&self) -> Option<&Path> {
-        self.settings.titanfall2.first().map(PathBuf::as_path)
+    pub fn get_titanfall_path(&self) -> &Path {
+        self.titanfall2.as_path()
     }
 
     pub fn add_titanfall_path(&mut self, titanfall: PathBuf) {
-        self.settings.titanfall2.push(titanfall);
+        self.titanfall2.push(titanfall);
     }
 
     #[must_use]
-    pub fn get_profiles(&self) -> &[ProfileSettings] {
-        &self.settings.profiles
+    pub fn get_profiles(&self) -> &[ProfileConfig] {
+        &self.profiles
     }
 
     #[must_use]
-    pub fn get_default_profile(&self) -> Option<&ProfileSettings> {
-        self.settings.profiles.first()
+    pub fn get_default_profile(&self) -> Option<&ProfileConfig> {
+        self.profiles.first()
     }
 
     #[must_use]
-    pub fn get_profile(&self, profile_name: &str) -> Option<&ProfileSettings> {
-        self.settings
-            .profiles
+    pub fn get_profile(&self, profile_name: &str) -> Option<&ProfileConfig> {
+        self.profiles
             .iter()
             .find(|profile| profile.name == profile_name)
     }
 
-    pub fn get_profile_mut(&mut self, profile_name: &str) -> Option<&mut ProfileSettings> {
-        self.settings
-            .profiles
+    pub fn get_profile_mut(&mut self, profile_name: &str) -> Option<&mut ProfileConfig> {
+        self.profiles
             .iter_mut()
             .find(|profile| profile.name == profile_name)
     }
@@ -182,36 +107,18 @@ impl FlightCoreSettings {
         &mut self,
         profile_name: &str,
         titanfall2: Option<PathBuf>,
-    ) -> Result<&mut ProfileSettings, Report> {
+    ) -> Result<&mut ProfileConfig, Report> {
         if self.get_profile(profile_name).is_some() {
             return Err(eyre!("this profile already exists!"));
         }
 
-        self.settings.profiles.push(ProfileSettings {
+        self.profiles.push(ProfileConfig {
             name: profile_name.to_string(),
-            titanfall2_path: titanfall2
-                .or_else(|| self.get_default_titanfall_path().map(ToOwned::to_owned))
-                .ok_or_else(|| eyre!("no default titanfall path configured"))?,
+            titanfall2_path: titanfall2.unwrap_or_else(|| self.get_titanfall_path().to_owned()),
             ..Default::default()
         });
 
         // the profile just got added
         Ok(self.get_profile_mut(profile_name).unwrap())
-    }
-
-    pub async fn save(&self) -> Result<(), Report> {
-        fs::write(
-            SETTINGS_PATH.as_path(),
-            ron::ser::to_string_pretty(&self.settings, PREATTY_CONFIG.clone())?,
-        )
-        .await
-        .wrap_err("couldn't save settings")
-    }
-}
-
-impl Drop for FlightCoreSettings {
-    fn drop(&mut self) {
-        _ = ron::ser::to_string_pretty(&self.settings, PREATTY_CONFIG.clone())
-            .map(|settings| _ = std::fs::write(SETTINGS_PATH.as_path(), settings));
     }
 }

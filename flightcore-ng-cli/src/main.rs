@@ -7,13 +7,10 @@ use flightcore_ng_core::{
     TITANFALL_ID, create_backup,
     dev::{
         fetch_revs::fetch_latest,
-        wine::wine_install::{install_wine, is_wine_installed, remove_wine, wine_run},
+        wine::wine_install::{install_wine, is_wine_installed, remove_wine},
     },
     launch::launch_northstar,
-    settings::{
-        CoreModsSource, DiscordRPCSource, FlightCoreSettings, LauncherSource, NorthstarSource,
-        SETTINGS_PATH, Source,
-    },
+    settings::NorthstarSource,
     setup::{northstar::bootstrap_northstar, sources::Store},
 };
 use indicatif::ProgressStyle;
@@ -101,12 +98,11 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut settings = match FlightCoreSettings::load().await {
+    let store = Store::new();
+
+    let mut settings = match store.evaluate_config() {
         Err(_) => {
-            warn!("made a backup for settings");
-            warn!("settings reset since they couldn't be loaded");
-            create_backup(SETTINGS_PATH.as_path(), true).await?;
-            FlightCoreSettings::load().await?
+            warn!("settings can't be loaded");
         }
         Ok(settings) => settings,
     };
@@ -149,14 +145,9 @@ async fn main() -> Result<()> {
         | Commands::Open { profile: _ } => "R2Northstar",
     };
 
-    let store = Store::try_new(settings.clone())?;
-
-    #[allow(clippy::map_unwrap_or)] // required because of aliasing
-    let titanfall_path = settings
-        .get_titanfall_path_from_profile(profile)
-        .or_else(|| settings.get_default_titanfall_path())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| ask_titanfall_path(&mut settings));
+    if store.config.titanfall2 == PathBuf::new() {
+        ask_titanfall_path(&mut store);
+    }
 
     match args.command {
         Commands::InstallPullRequest {
@@ -187,7 +178,7 @@ async fn main() -> Result<()> {
 
             let profile = profile.as_deref().unwrap_or("R2NorthstarDev");
             #[allow(clippy::option_if_let_else)] // required because of aliasing
-            let profile = if let Some(profile) = settings.get_profile_mut(profile) {
+            let profile = if let Some(profile) = store.get_profile_mut(profile) {
                 profile
             } else {
                 let profile = settings
@@ -253,7 +244,7 @@ async fn main() -> Result<()> {
             profile,
         } => {
             launch_northstar(
-                &settings,
+                &store,
                 profile.as_deref().unwrap_or("R2NorthstarStable"),
                 passthrough,
             )
@@ -298,7 +289,7 @@ async fn main() -> Result<()> {
             }
 
             launch_northstar(
-                &settings,
+                &store,
                 profile.as_deref().unwrap_or("R2NorthstarStable"),
                 passthrough,
             )
@@ -306,32 +297,37 @@ async fn main() -> Result<()> {
         }
 
         Commands::Edit { editor } => {
-            settings.save().await.wrap_err("tried saving settings")?;
-            drop(settings);
-            _ = tokio::process::Command::new(
-                editor
-                    .or_else(|| std::env::var("EDITOR").ok())
-                    .unwrap_or_else(|| {
-                        if cfg!(target_os = "linux") {
-                            "nano".to_string()
-                        } else {
-                            "notepad".to_string()
-                        }
-                    }),
-            )
-            .arg(flightcore_ng_core::settings::SETTINGS_PATH.as_path())
-            .output()
-            .await?;
+            // settings.save().await.wrap_err("tried saving settings")?;
+            // drop(settings);
+            // _ = tokio::process::Command::new(
+            //     editor
+            //         .or_else(|| std::env::var("EDITOR").ok())
+            //         .unwrap_or_else(|| {
+            //             if cfg!(target_os = "linux") {
+            //                 "nano".to_string()
+            //             } else {
+            //                 "notepad".to_string()
+            //             }
+            //         }),
+            // )
+            // .arg(flightcore_ng_core::settings::SETTINGS_PATH.as_path())
+            // .output()
+            // .await?;
         }
-        Commands::Open { profile: _ } => {
-            open::that_detached(titanfall_path.join(profile))?;
+        Commands::Open { profile: profile } => {
+            let profile = profile
+                .and_then(|profile| store.get_profile(&profile))
+                .or_else(|| store.get_default_profile())
+                .ok_or_else(|| eyre!("no default profile or no such profile {profile:?} exists"))?;
+
+            open::that_detached(profile.titanfall2_path.join(profile.name))?;
         }
     }
 
     Ok(())
 }
 
-fn ask_titanfall_path(settings: &mut FlightCoreSettings) -> PathBuf {
+fn ask_titanfall_path(store: &mut Store) -> PathBuf {
     let steam_path = SteamDir::locate().ok().and_then(|steam_dir| {
         let (app, library) = steam_dir.find_app(TITANFALL_ID).ok()??;
 
@@ -385,8 +381,8 @@ fn ask_titanfall_path(settings: &mut FlightCoreSettings) -> PathBuf {
         Ok(path) => PathBuf::from(path),
     };
 
-    settings.add_titanfall_path(titanfall.clone());
-    settings.add_default_profiles();
+    store.add_titanfall_path(titanfall.clone());
+    store.get_default_profile();
 
     titanfall
 }

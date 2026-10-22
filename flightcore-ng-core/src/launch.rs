@@ -25,17 +25,6 @@ pub async fn launch_northstar(
     info!("using profile {}", profile.name);
     launch_args.push(format!("-profile={}", profile.name));
 
-    let launch = if profile.launch_method == LaunchMethod::Any {
-        if cfg!(target_os = "linux") && settings.settings.preferred_launch == LaunchMethod::Steam {
-            LaunchMethod::Steam
-        } else if cfg!(target_os = "linux") {
-            LaunchMethod::Wine
-        } else {
-            LaunchMethod::Direct
-        }
-    } else {
-        profile.launch_method
-    };
     let launch = get_launch_method(store, profile);
 
     launch_args.extend(profile.launch_args.clone());

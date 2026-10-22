@@ -78,7 +78,7 @@ pub async fn bootstrap_northstar(profile: &ProfileConfig, check: Check) -> Resul
 }
 
 async fn setup_version(
-    profile: &ProfileSettings,
+    profile: &ProfileConfig,
     check: Check,
     version: &Version,
 ) -> Result<(), Report> {
@@ -91,7 +91,7 @@ async fn setup_version(
     Ok(())
 }
 
-async fn setup_stable(profile: &ProfileSettings) -> Result<(), Report> {
+async fn setup_stable(profile: &ProfileConfig) -> Result<(), Report> {
     let version = match fetch_latest_version("R2Northstar", "Northstar")
         .await
         .wrap_err("couldn't fetch latest northstar version")
@@ -114,7 +114,7 @@ async fn setup_stable(profile: &ProfileSettings) -> Result<(), Report> {
     Ok(())
 }
 
-async fn setup_nightly(profile: &ProfileSettings) -> Result<(), Report> {
+async fn setup_nightly(profile: &ProfileConfig) -> Result<(), Report> {
     'version_check: {
         // break if the profile doesn't even exist
         if !profile.titanfall2_path.join(&profile.name).exists() {
@@ -162,7 +162,7 @@ async fn setup_nightly(profile: &ProfileSettings) -> Result<(), Report> {
     Ok(())
 }
 
-async fn setup_overlayed(profile: &ProfileSettings, check: Check) -> Result<(), Report> {
+async fn setup_overlayed(profile: &ProfileConfig, check: Check) -> Result<(), Report> {
     if check == Check::Check {
         info!(
             "northstar with overlay will not self bootstrap since it's not possible to tell trivially if things have changed or not"
@@ -170,98 +170,98 @@ async fn setup_overlayed(profile: &ProfileSettings, check: Check) -> Result<(), 
         return Ok(());
     }
 
-    let launcher = profile
-        .sources
-        .iter()
-        .find_map(|source| source.as_launcher());
-    let mods = profile
-        .sources
-        .iter()
-        .find_map(|source| source.as_core_mods());
-    let discord_rpc = profile
-        .sources
-        .iter()
-        .find_map(|source| source.as_discord_rpc());
-    let (Some(launcher), Some(mods)) = (launcher, mods) else {
-        return Err(eyre!(
-            "cannot bootstrap northstar in overlay mode without launcher and mods specified"
-        ));
-    };
+    // let launcher = profile
+    //     .sources
+    //     .iter()
+    //     .find_map(|source| source.as_north());
+    // let mods = profile
+    //     .sources
+    //     .iter()
+    //     .find_map(|source| source.as_core_mods());
+    // let discord_rpc = profile
+    //     .sources
+    //     .iter()
+    //     .find_map(|source| source.as_discord_rpc());
+    // let (Some(launcher), Some(mods)) = (launcher, mods) else {
+    //     return Err(eyre!(
+    //         "cannot bootstrap northstar in overlay mode without launcher and mods specified"
+    //     ));
+    // };
 
-    match (launcher, mods, discord_rpc) {
-        (
-            crate::settings::LauncherSource::FromCommit(launcher),
-            crate::settings::CoreModsSource::FromCommit(mods),
-            Some(crate::settings::DiscordRPCSource::FromCommit(discord_rpc)),
-        ) => {
-            install_northstar(
-                &get_northstar_from_revs(
-                    NorthstarInstallHashes::new(mods.clone(), launcher.clone())
-                        .with_discord_rpc(discord_rpc.clone()),
-                )
-                .await?,
-                &profile.name,
-                &profile.titanfall2_path,
-            )
-            .await?;
-        }
-        (
-            crate::settings::LauncherSource::FromCommit(launcher),
-            crate::settings::CoreModsSource::FromCommit(mods),
-            None,
-        ) => {
-            install_northstar(
-                &get_northstar_from_revs(NorthstarInstallHashes::new(
-                    mods.clone(),
-                    launcher.clone(),
-                ))
-                .await?,
-                &profile.name,
-                &profile.titanfall2_path,
-            )
-            .await?;
-        }
-        (
-            crate::settings::LauncherSource::Path(launcher),
-            crate::settings::CoreModsSource::Path(mods),
-            _,
-        ) => {
-            #[cfg(target_os = "linux")]
-            {
-                _ = fs::remove_file(
-                    profile
-                        .titanfall2_path
-                        .join(&profile.name)
-                        .join("Northstar.dll"),
-                )
-                .await;
-                _ = fs::symlink(
-                    launcher.join("build").join("game").join("Northstar.dll"),
-                    profile
-                        .titanfall2_path
-                        .join(&profile.name)
-                        .join("Northstar.dll"),
-                )
-                .await;
-                for (top, mod_path) in CORE_MODS
-                    .into_iter()
-                    .map(|path| profile.titanfall2_path.join(&profile.name).join(path))
-                    .filter_map(|path| {
-                        Some((path.components().next()?.as_os_str().to_os_string(), path))
-                    })
-                {
-                    _ = fs::remove_file(&mod_path).await;
-                    _ = fs::symlink(mods.join(top), mod_path).await;
-                }
-            }
-        }
-        _ => todo!("this overlay combo is not supported yet"),
-    }
+    // match (launcher, mods, discord_rpc) {
+    //     (
+    //         crate::settings::LauncherSource::FromCommit(launcher),
+    //         crate::settings::CoreModsSource::FromCommit(mods),
+    //         Some(crate::settings::DiscordRPCSource::FromCommit(discord_rpc)),
+    //     ) => {
+    //         install_northstar(
+    //             &get_northstar_from_revs(
+    //                 NorthstarInstallHashes::new(mods.clone(), launcher.clone())
+    //                     .with_discord_rpc(discord_rpc.clone()),
+    //             )
+    //             .await?,
+    //             &profile.name,
+    //             &profile.titanfall2_path,
+    //         )
+    //         .await?;
+    //     }
+    //     (
+    //         crate::settings::LauncherSource::FromCommit(launcher),
+    //         crate::settings::CoreModsSource::FromCommit(mods),
+    //         None,
+    //     ) => {
+    //         install_northstar(
+    //             &get_northstar_from_revs(NorthstarInstallHashes::new(
+    //                 mods.clone(),
+    //                 launcher.clone(),
+    //             ))
+    //             .await?,
+    //             &profile.name,
+    //             &profile.titanfall2_path,
+    //         )
+    //         .await?;
+    //     }
+    //     (
+    //         crate::settings::LauncherSource::Path(launcher),
+    //         crate::settings::CoreModsSource::Path(mods),
+    //         _,
+    //     ) => {
+    //         #[cfg(target_os = "linux")]
+    //         {
+    //             _ = fs::remove_file(
+    //                 profile
+    //                     .titanfall2_path
+    //                     .join(&profile.name)
+    //                     .join("Northstar.dll"),
+    //             )
+    //             .await;
+    //             _ = fs::symlink(
+    //                 launcher.join("build").join("game").join("Northstar.dll"),
+    //                 profile
+    //                     .titanfall2_path
+    //                     .join(&profile.name)
+    //                     .join("Northstar.dll"),
+    //             )
+    //             .await;
+    //             for (top, mod_path) in CORE_MODS
+    //                 .into_iter()
+    //                 .map(|path| profile.titanfall2_path.join(&profile.name).join(path))
+    //                 .filter_map(|path| {
+    //                     Some((path.components().next()?.as_os_str().to_os_string(), path))
+    //                 })
+    //             {
+    //                 _ = fs::remove_file(&mod_path).await;
+    //                 _ = fs::symlink(mods.join(top), mod_path).await;
+    //             }
+    //         }
+    //     }
+    //     _ => todo!("this overlay combo is not supported yet"),
+    // }
 
     Ok(())
 }
 
-async fn setup_ion(profile: &ProfileSettings) -> Result<(), Report> {
+async fn setup_ion(profile: &ProfileConfig) -> Result<(), Report> {
     let version = match fetch_latest_version("r2ion", "Ion")
         .await
         .wrap_err("couldn't fetch latest ion version")
@@ -348,8 +348,8 @@ async fn install_northstar_release_asset(
     profile: &ProfileConfig,
     northstar_asset: Asset,
 ) -> Result<(), Report> {
-    const THUNK: fn(f32) = |_| {};
-    let bytes = fetch_asset(northstar_asset, Some(THUNK).filter(|_| false))
+    const THUNK: fn(f64) = |_| {};
+    let bytes = fetch_asset(northstar_asset, false.then_some(THUNK))
         .await
         .wrap_err("no assets found")?;
     let cursor = Cursor::new(bytes);
@@ -510,7 +510,7 @@ pub async fn install_northstar(
     Ok(())
 }
 
-fn check_if_installed(profile: &ProfileSettings, version: &str) -> bool {
+fn check_if_installed(profile: &ProfileConfig, version: &str) -> bool {
     let profile_path = profile.titanfall2_path.join(&profile.name);
     if !profile_path.exists() {
         return false;

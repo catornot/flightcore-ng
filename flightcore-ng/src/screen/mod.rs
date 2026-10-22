@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use flightcore_ng_core::settings::FlightCoreSettings;
+use flightcore_ng_core::setup::sources::Store;
 use iced::{
     Color, Element, Length, Task,
     alignment::{Horizontal, Vertical},
@@ -25,12 +25,12 @@ pub struct Screens {
 }
 
 impl Screens {
-    pub fn new(settings: &Arc<RwLock<FlightCoreSettings>>) -> Self {
+    pub fn new(store: &Arc<RwLock<Store>>) -> Self {
         Self {
             screens: vec![
-                Box::new(LaunchScreen::new(Arc::clone(settings))),
-                Box::new(ModsScreen::new(Arc::clone(settings))),
-                Box::new(ProfilesScreen::new(Arc::clone(settings))),
+                Box::new(LaunchScreen::new(Arc::clone(store))),
+                Box::new(ModsScreen::new(Arc::clone(store))),
+                Box::new(ProfilesScreen::new(Arc::clone(store))),
             ],
             active: 0,
         }
@@ -122,7 +122,7 @@ pub enum ScreensMessage {
     },
     Startup,
     NewNorthstarVersion(Option<String>),
-    AcquiredLock(Option<Arc<OwnedRwLockWriteGuard<FlightCoreSettings>>>),
+    AcquiredLock(Option<Arc<OwnedRwLockWriteGuard<Store>>>),
 }
 
 pub trait Screen: std::fmt::Debug {

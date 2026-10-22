@@ -1,4 +1,4 @@
-use flightcore_ng_core::settings::FlightCoreSettings;
+use flightcore_ng_core::setup::sources::Store;
 use iced::{
     Element, Padding, Task,
     widget::{column, container, scrollable, text, tooltip},
@@ -14,14 +14,14 @@ use crate::{
 
 #[derive(Debug)]
 pub struct ProfilesScreen {
-    settings: Arc<RwLock<FlightCoreSettings>>,
+    settings: Arc<RwLock<Store>>,
     cached_profiles: Vec<String>,
-    lock: Option<OwnedRwLockWriteGuard<FlightCoreSettings>>,
+    lock: Option<OwnedRwLockWriteGuard<Store>>,
     focused: bool, // TODO: don't handle such state here?
 }
 
 impl ProfilesScreen {
-    pub const fn new(settings: Arc<RwLock<FlightCoreSettings>>) -> Self {
+    pub const fn new(settings: Arc<RwLock<Store>>) -> Self {
         Self {
             settings,
             lock: None,
@@ -92,7 +92,7 @@ fn no_lock_view(cached_profiles: &[String]) -> Element<'_, Message> {
     }
 }
 
-fn build_profile_cache(settings: &FlightCoreSettings) -> Vec<String> {
+fn build_profile_cache(settings: &Store) -> Vec<String> {
     settings
         .get_profiles()
         .iter()
@@ -100,6 +100,6 @@ fn build_profile_cache(settings: &FlightCoreSettings) -> Vec<String> {
         .collect()
 }
 
-async fn acquire_lock(settings: Arc<RwLock<FlightCoreSettings>>) -> ScreensMessage {
+async fn acquire_lock(settings: Arc<RwLock<Store>>) -> ScreensMessage {
     ScreensMessage::AcquiredLock(Some(Arc::new(settings.write_owned().await)))
 }

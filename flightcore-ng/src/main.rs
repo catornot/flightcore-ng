@@ -1,7 +1,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::unused_self)]
 
-use flightcore_ng_core::settings::FlightCoreSettings;
+use flightcore_ng_core::setup::sources::Store;
 use iced::{Element, Task, Theme};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -29,13 +29,7 @@ fn main() -> iced::Result {
 
     iced::application(
         || {
-            let settings = Arc::new(RwLock::new(
-                tokio::runtime::Builder::new_current_thread()
-                    .build()
-                    .unwrap()
-                    .block_on(FlightCoreSettings::load())
-                    .unwrap(),
-            ));
+            let settings = Arc::new(RwLock::new(Store::new()));
 
             (
                 FlightCore {
